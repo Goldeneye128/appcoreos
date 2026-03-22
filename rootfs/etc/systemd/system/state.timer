@@ -1,0 +1,13 @@
+# Refresh local machine state every minute.
+[Unit]
+Description=Run local state generation every minute
+Documentation=man:systemd.timer(5)
+
+[Timer]
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=state.service
+
+[Install]
+WantedBy=timers.target

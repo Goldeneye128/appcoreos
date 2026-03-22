@@ -1,0 +1,10 @@
+# Generate local machine state snapshot.
+[Unit]
+Description=Generate local system state
+Documentation=man:systemd.service(5)
+After=containers.service
+Wants=containers.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/your-os/generate-state.sh
