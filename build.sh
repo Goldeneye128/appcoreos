@@ -3,12 +3,19 @@ set -euo pipefail
 
 IMAGE_TAG="appcoreos:latest"
 BUILD_DIR="build"
-RAW_IMAGE="${BUILD_DIR}/appcoreos.raw"
+BASE_QCOW2_IMAGE="${BUILD_DIR}/fedora-cloud-base.qcow2"
 QCOW2_IMAGE="${BUILD_DIR}/appcoreos.qcow2"
+QCOW2_IMAGE_TMP="${BUILD_DIR}/appcoreos.tmp.qcow2"
 MOUNT_DIR="${BUILD_DIR}/mnt"
+NBD_DEVICE="${NBD_DEVICE:-/dev/nbd0}"
+
+FEDORA_CLOUD_IMAGE_URL="${FEDORA_CLOUD_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-41-1.4.qcow2}"
 
 TARGET=""
 CONTAINER_ID=""
+MOUNT_METHOD=""
+CHROOT_MOUNTS_ACTIVE=0
+NBD_CONNECTED=0
 
 log() {
   echo "$(date -Iseconds) [build] $*"
@@ -41,9 +48,28 @@ root_cmd() {
 }
 
 cleanup() {
-  if [[ -d "${MOUNT_DIR}" ]] && mountpoint -q "${MOUNT_DIR}" 2>/dev/null; then
-    root_cmd umount "${MOUNT_DIR}" || true
+  if [[ "${CHROOT_MOUNTS_ACTIVE}" -eq 1 ]]; then
+    root_cmd umount "${MOUNT_DIR}/run" >/dev/null 2>&1 || true
+    root_cmd umount "${MOUNT_DIR}/sys" >/dev/null 2>&1 || true
+    root_cmd umount "${MOUNT_DIR}/proc" >/dev/null 2>&1 || true
+    root_cmd umount "${MOUNT_DIR}/dev" >/dev/null 2>&1 || true
   fi
+
+  if [[ "${MOUNT_METHOD}" == "guestmount" ]]; then
+    root_cmd guestunmount "${MOUNT_DIR}" >/dev/null 2>&1 || true
+  elif [[ "${MOUNT_METHOD}" == "qemu-nbd" ]]; then
+    if mountpoint -q "${MOUNT_DIR}" 2>/dev/null; then
+      root_cmd umount "${MOUNT_DIR}" >/dev/null 2>&1 || true
+    fi
+    if [[ "${NBD_CONNECTED}" -eq 1 ]]; then
+      root_cmd qemu-nbd --disconnect "${NBD_DEVICE}" >/dev/null 2>&1 || true
+    fi
+  else
+    if [[ -d "${MOUNT_DIR}" ]] && mountpoint -q "${MOUNT_DIR}" 2>/dev/null; then
+      root_cmd umount "${MOUNT_DIR}" >/dev/null 2>&1 || true
+    fi
+  fi
+
   if [[ -n "${CONTAINER_ID}" ]]; then
     podman rm "${CONTAINER_ID}" >/dev/null 2>&1 || true
   fi
@@ -72,38 +98,92 @@ EOF
 build_proxmox() {
   require_cmd podman
   require_cmd qemu-img
-  require_cmd mkfs.ext4
+  require_cmd curl
+  require_cmd tar
+  require_cmd chroot
   require_cmd mount
   require_cmd umount
   require_cmd mountpoint
-  require_cmd tar
 
   trap cleanup EXIT
 
   mkdir -p "${BUILD_DIR}" "${MOUNT_DIR}"
-  rm -f "${RAW_IMAGE}" "${QCOW2_IMAGE}"
+  rm -f "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
 
   build_image
 
-  log "creating raw disk image (2GB): ${RAW_IMAGE}"
-  truncate -s 2G "${RAW_IMAGE}"
+  log "downloading Fedora Cloud base image"
+  curl -fsSL "${FEDORA_CLOUD_IMAGE_URL}" -o "${BASE_QCOW2_IMAGE}"
 
-  log "formatting raw disk with ext4"
-  root_cmd mkfs.ext4 -F "${RAW_IMAGE}" >/dev/null
+  log "preparing working qcow2 image: ${QCOW2_IMAGE}"
+  cp "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}"
 
-  log "mounting raw disk image"
-  root_cmd mount -o loop "${RAW_IMAGE}" "${MOUNT_DIR}"
+  log "mounting qcow2 image"
+  if command -v guestmount >/dev/null 2>&1 && command -v guestunmount >/dev/null 2>&1; then
+    root_cmd guestmount -a "${QCOW2_IMAGE}" -i --rw "${MOUNT_DIR}"
+    MOUNT_METHOD="guestmount"
+  elif command -v qemu-nbd >/dev/null 2>&1; then
+    require_cmd lsblk
+    require_cmd partprobe
+    root_cmd modprobe nbd max_part=8 >/dev/null 2>&1 || true
+    root_cmd qemu-nbd --disconnect "${NBD_DEVICE}" >/dev/null 2>&1 || true
+    root_cmd qemu-nbd --connect "${NBD_DEVICE}" "${QCOW2_IMAGE}"
+    NBD_CONNECTED=1
+    root_cmd partprobe "${NBD_DEVICE}" >/dev/null 2>&1 || true
+    sleep 1
 
-  CONTAINER_ID="$(podman create "${IMAGE_TAG}")"
-  log "extracting container filesystem into raw disk"
-  podman export "${CONTAINER_ID}" | root_cmd tar -xpf - -C "${MOUNT_DIR}"
+    nbd_partition="$(root_cmd lsblk -lnpo NAME,FSTYPE "${NBD_DEVICE}" | awk '$2 ~ /ext4|xfs|btrfs/ {print $1; exit}')"
+    if [[ -z "${nbd_partition}" ]]; then
+      nbd_partition="${NBD_DEVICE}p2"
+    fi
+    root_cmd mount "${nbd_partition}" "${MOUNT_DIR}"
+    MOUNT_METHOD="qemu-nbd"
+  else
+    echo "Missing required mount backend: install guestmount or qemu-nbd." >&2
+    exit 1
+  fi
+
+  log "copying appliance rootfs overlay into mounted image"
+  tar -C rootfs -cf - . | root_cmd tar -xpf - -C "${MOUNT_DIR}"
+
+  log "binding pseudo-filesystems for chroot customization"
+  root_cmd mkdir -p "${MOUNT_DIR}/dev" "${MOUNT_DIR}/proc" "${MOUNT_DIR}/sys" "${MOUNT_DIR}/run"
+  root_cmd mount --bind /dev "${MOUNT_DIR}/dev"
+  root_cmd mount -t proc proc "${MOUNT_DIR}/proc"
+  root_cmd mount --bind /sys "${MOUNT_DIR}/sys"
+  root_cmd mount --bind /run "${MOUNT_DIR}/run"
+  CHROOT_MOUNTS_ACTIVE=1
+
+  log "installing required runtime packages in image"
+  root_cmd chroot "${MOUNT_DIR}" /usr/bin/dnf -y install podman systemd NetworkManager yq curl python3
+  root_cmd chroot "${MOUNT_DIR}" /usr/bin/dnf -y remove openssh-server >/dev/null 2>&1 || true
+  root_cmd chroot "${MOUNT_DIR}" /usr/bin/dnf clean all
+
+  log "enabling required systemd units in image"
+  root_cmd chroot "${MOUNT_DIR}" /usr/bin/systemctl mask getty@tty1.service
+  root_cmd chroot "${MOUNT_DIR}" /usr/bin/systemctl enable \
+    machine-config.service \
+    containers.service \
+    podman-auto-update.timer \
+    state.timer \
+    update-os.timer \
+    machine-id.service \
+    agent.service \
+    tui.service \
+    NetworkManager.service
+
   root_cmd sync
 
-  log "unmounting raw disk image"
-  root_cmd umount "${MOUNT_DIR}"
+  log "unmounting qcow2 image"
+  cleanup
+  trap - EXIT
+  MOUNT_METHOD=""
+  CHROOT_MOUNTS_ACTIVE=0
+  NBD_CONNECTED=0
 
-  log "converting raw image to qcow2: ${QCOW2_IMAGE}"
-  qemu-img convert -f raw -O qcow2 "${RAW_IMAGE}" "${QCOW2_IMAGE}"
+  log "repacking qcow2 image"
+  qemu-img convert -f qcow2 -O qcow2 "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
+  mv -f "${QCOW2_IMAGE_TMP}" "${QCOW2_IMAGE}"
 
   log "proxmox artifact ready: ${QCOW2_IMAGE}"
 }
