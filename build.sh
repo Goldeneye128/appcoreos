@@ -13,8 +13,8 @@ MOUNT_DIR="${BUILD_DIR}/mnt"
 NBD_DEVICE="${NBD_DEVICE:-/dev/nbd0}"
 OS="$(uname -s)"
 FEDORA_VERSION="43"
-METALINK_URL="https://mirrors.fedoraproject.org/metalink?repo=fedora-${FEDORA_VERSION}&arch=x86_64"
-FEDORA_CLOUD_IMAGE_URL=""
+FEDORA_IMAGE_NAME="Fedora-Cloud-Base-Generic.x86_64-43-1.1.qcow2"
+FEDORA_CLOUD_IMAGE_URL="https://download.fedoraproject.org/pub/fedora/linux/releases/${FEDORA_VERSION}/Cloud/x86_64/images/${FEDORA_IMAGE_NAME}"
 
 TARGET=""
 CONTAINER_ID=""
@@ -122,19 +122,7 @@ build_proxmox_internal() {
   rm -f "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
 
   log "using Fedora version ${FEDORA_VERSION}"
-  log "resolving Fedora Cloud qcow2 image via metalink"
-  QCOW2_PATH="$(
-    curl -s "${METALINK_URL}" \
-      | grep -oE 'Fedora-Cloud-Base-Generic.x86_64-[0-9.-]+\.qcow2' \
-      | head -n1 || true
-  )"
-  if [[ -z "${QCOW2_PATH}" ]]; then
-    echo "Failed to resolve Fedora qcow2 image via metalink" >&2
-    exit 1
-  fi
-
-  FEDORA_CLOUD_IMAGE_URL="https://download.fedoraproject.org/pub/fedora/linux/releases/${FEDORA_VERSION}/Cloud/x86_64/images/${QCOW2_PATH}"
-  log "resolved image: ${QCOW2_PATH}"
+  log "using image ${FEDORA_IMAGE_NAME}"
   log "downloading from ${FEDORA_CLOUD_IMAGE_URL}"
   if ! curl -fL --retry 3 --retry-delay 2 "${FEDORA_CLOUD_IMAGE_URL}" -o "${BASE_QCOW2_IMAGE}"; then
     echo "Failed to download Fedora ${FEDORA_VERSION} cloud image" >&2
