@@ -68,9 +68,7 @@ cleanup() {
     root_cmd umount "${MOUNT_DIR}/dev" >/dev/null 2>&1 || true
   fi
 
-  if [[ "${MOUNT_METHOD}" == "guestmount" ]]; then
-    root_cmd guestunmount "${MOUNT_DIR}" >/dev/null 2>&1 || true
-  elif [[ "${MOUNT_METHOD}" == "qemu-nbd" ]]; then
+  if [[ "${MOUNT_METHOD}" == "qemu-nbd" ]]; then
     if mountpoint -q "${MOUNT_DIR}" 2>/dev/null; then
       root_cmd umount "${MOUNT_DIR}" >/dev/null 2>&1 || true
     fi
@@ -110,12 +108,15 @@ EOF
 
 build_proxmox_internal() {
   require_cmd qemu-img
+  require_cmd qemu-nbd
   require_cmd curl
   require_cmd tar
   require_cmd chroot
   require_cmd mount
   require_cmd umount
   require_cmd mountpoint
+  require_cmd lsblk
+  require_cmd partprobe
 
   trap cleanup EXIT
 
@@ -135,29 +136,23 @@ build_proxmox_internal() {
   cp "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}"
 
   log "mounting qcow2 image"
-  if command -v guestmount >/dev/null 2>&1 && command -v guestunmount >/dev/null 2>&1; then
-    root_cmd guestmount -a "${QCOW2_IMAGE}" -i --rw "${MOUNT_DIR}"
-    MOUNT_METHOD="guestmount"
-  elif command -v qemu-nbd >/dev/null 2>&1; then
-    require_cmd lsblk
-    require_cmd partprobe
-    root_cmd modprobe nbd max_part=8 >/dev/null 2>&1 || true
-    root_cmd qemu-nbd --disconnect "${NBD_DEVICE}" >/dev/null 2>&1 || true
-    root_cmd qemu-nbd --connect "${NBD_DEVICE}" "${QCOW2_IMAGE}"
-    NBD_CONNECTED=1
-    root_cmd partprobe "${NBD_DEVICE}" >/dev/null 2>&1 || true
-    sleep 1
+  log "using qemu-nbd to mount qcow2"
+  root_cmd modprobe nbd max_part=8 >/dev/null 2>&1 || true
+  root_cmd qemu-nbd --disconnect "${NBD_DEVICE}" >/dev/null 2>&1 || true
+  root_cmd qemu-nbd --connect "${NBD_DEVICE}" "${QCOW2_IMAGE}"
+  NBD_CONNECTED=1
 
-    nbd_partition="$(root_cmd lsblk -lnpo NAME,FSTYPE "${NBD_DEVICE}" | awk '$2 ~ /ext4|xfs|btrfs/ {print $1; exit}')"
-    if [[ -z "${nbd_partition}" ]]; then
-      nbd_partition="${NBD_DEVICE}p2"
-    fi
-    root_cmd mount "${nbd_partition}" "${MOUNT_DIR}"
-    MOUNT_METHOD="qemu-nbd"
-  else
-    echo "Missing required mount backend: install guestmount or qemu-nbd." >&2
+  root_cmd partprobe "${NBD_DEVICE}" >/dev/null 2>&1 || true
+  sleep 1
+
+  nbd_partition="$(root_cmd lsblk -lnpo NAME,FSTYPE "${NBD_DEVICE}" | awk '$2 ~ /ext4|xfs|btrfs/ {print $1; exit}')"
+  if [[ -z "${nbd_partition}" ]]; then
+    echo "Failed to detect root partition on ${NBD_DEVICE}" >&2
     exit 1
   fi
+  root_cmd mount "${nbd_partition}" "${MOUNT_DIR}"
+  MOUNT_METHOD="qemu-nbd"
+  log "mounted qcow2 via ${nbd_partition}"
 
   log "copying appliance rootfs overlay into mounted image"
   tar -C rootfs -cf - . | root_cmd tar -xpf - -C "${MOUNT_DIR}"
@@ -215,7 +210,6 @@ RUN dnf -y install \
       curl \
       dnf \
       e2fsprogs \
-      libguestfs-tools-c \
       kmod \
       parted \
       qemu-img \
