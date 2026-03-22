@@ -5,12 +5,14 @@ FROM quay.io/fedora/fedora-bootc:41
 # - podman: container runtime (used later via Quadlet)
 # - yq: parse machine-config YAML
 # - curl: remote config + API fetches
+# - python3: local debug HTTP server for agent
 # - NetworkManager: single networking stack (nmcli for DHCP/static)
 # - systemd: service orchestration
 RUN dnf -y install \
       podman \
       yq \
       curl \
+      python3 \
       NetworkManager \
       systemd \
     && dnf -y remove openssh-server \
@@ -31,6 +33,7 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && chmod 0755 /usr/lib/your-os/update-os.sh \
     && chmod 0755 /usr/lib/your-os/init-machine-id.sh \
     && chmod 0755 /usr/lib/your-os/agent.sh \
+    && chmod 0755 /usr/lib/your-os/agent-debug-server.py \
     && chmod 0755 /usr/lib/your-os/tui.sh \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \

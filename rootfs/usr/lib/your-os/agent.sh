@@ -8,6 +8,7 @@ CONFIG_DOWNLOAD_FILE="/var/lib/your-os/config.new.yaml.download"
 LAST_REBOOT_TRIGGER_FILE="/var/lib/your-os/last-reboot-trigger"
 MACHINE_ID_FILE="/var/lib/your-os/machine-id"
 REMOTE_CONFIG_BASE_URL="http://127.0.0.1:8081/config"
+DEBUG_SERVER_SCRIPT="/usr/lib/your-os/agent-debug-server.py"
 MAX_CONFIG_BYTES=1048576
 MIN_REBOOT_INTERVAL_SECONDS=60
 SLEEP_SECONDS=30
@@ -28,6 +29,7 @@ require_bin curl
 require_bin systemctl
 require_bin cmp
 require_bin mktemp
+require_bin python3
 
 if [[ ! -s "${MACHINE_ID_FILE}" ]]; then
   log "machine-id missing at ${MACHINE_ID_FILE}"
@@ -37,6 +39,23 @@ fi
 machine_id="$(tr -d '\n' < "${MACHINE_ID_FILE}")"
 remote_config_url="${REMOTE_CONFIG_BASE_URL}/${machine_id}"
 log "machine-id=${machine_id}"
+
+if [[ ! -f "${DEBUG_SERVER_SCRIPT}" ]]; then
+  log "debug server missing at ${DEBUG_SERVER_SCRIPT}"
+  exit 1
+fi
+
+log "starting local debug HTTP server on 127.0.0.1:9090"
+python3 "${DEBUG_SERVER_SCRIPT}" &
+debug_server_pid="$!"
+
+cleanup() {
+  if [[ -n "${debug_server_pid:-}" ]]; then
+    kill "${debug_server_pid}" >/dev/null 2>&1 || true
+  fi
+}
+
+trap cleanup EXIT
 
 while true; do
   if [[ ! -f "${STATE_FILE}" ]]; then
