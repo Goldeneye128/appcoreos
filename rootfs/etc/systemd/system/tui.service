@@ -1,0 +1,25 @@
+# Read-only local console UI for appliance state.
+[Unit]
+Description=Your-OS read-only console UI
+Documentation=man:systemd.service(5)
+After=state.service
+Wants=state.service
+# Ensure tty1 is owned by TUI, not login prompt.
+Conflicts=getty@tty1.service
+Before=getty@tty1.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/your-os/tui.sh
+Restart=always
+RestartSec=1
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+
+[Install]
+WantedBy=multi-user.target
