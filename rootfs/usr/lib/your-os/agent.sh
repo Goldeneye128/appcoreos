@@ -4,8 +4,12 @@ set -euo pipefail
 STATE_FILE="/var/lib/your-os/state.json"
 CONFIG_FILE="/var/lib/your-os/config.yaml"
 CONFIG_NEW_FILE="/var/lib/your-os/config.new.yaml"
+CONFIG_DOWNLOAD_FILE="/var/lib/your-os/config.new.yaml.download"
+LAST_REBOOT_TRIGGER_FILE="/var/lib/your-os/last-reboot-trigger"
 MACHINE_ID_FILE="/var/lib/your-os/machine-id"
 REMOTE_CONFIG_BASE_URL="http://127.0.0.1:8081/config"
+MAX_CONFIG_BYTES=1048576
+MIN_REBOOT_INTERVAL_SECONDS=60
 SLEEP_SECONDS=30
 
 log() {
@@ -22,6 +26,8 @@ require_bin() {
 require_bin yq
 require_bin curl
 require_bin systemctl
+require_bin cmp
+require_bin mktemp
 
 if [[ ! -s "${MACHINE_ID_FILE}" ]]; then
   log "machine-id missing at ${MACHINE_ID_FILE}"
@@ -42,20 +48,38 @@ while true; do
   fi
 
   log "fetching remote config from ${remote_config_url}"
-  rm -f "${CONFIG_NEW_FILE}"
+  rm -f "${CONFIG_NEW_FILE}" "${CONFIG_DOWNLOAD_FILE}"
   http_code="$(
-    curl -sS --max-time 10 --output "${CONFIG_NEW_FILE}" --write-out "%{http_code}" \
+    curl -sS --max-time 10 --output "${CONFIG_DOWNLOAD_FILE}" --write-out "%{http_code}" \
       "${remote_config_url}" 2>/dev/null || true
   )"
 
   if [[ "${http_code}" == "200" ]]; then
     log "remote config fetch succeeded (HTTP 200)"
-    if ! yq -e '.' "${CONFIG_NEW_FILE}" >/dev/null 2>&1; then
-      log "remote config invalid, ignoring"
-      rm -f "${CONFIG_NEW_FILE}"
+    config_size_bytes="$(wc -c < "${CONFIG_DOWNLOAD_FILE}" | tr -d '[:space:]')"
+    if (( config_size_bytes >= MAX_CONFIG_BYTES )); then
+      log "config rejected (too large: ${config_size_bytes} bytes, max ${MAX_CONFIG_BYTES})"
+      rm -f "${CONFIG_DOWNLOAD_FILE}"
       sleep "${SLEEP_SECONDS}"
       continue
     fi
+
+    if ! yq -e '.' "${CONFIG_DOWNLOAD_FILE}" >/dev/null 2>&1; then
+      log "config rejected (invalid YAML)"
+      rm -f "${CONFIG_DOWNLOAD_FILE}"
+      sleep "${SLEEP_SECONDS}"
+      continue
+    fi
+
+    if ! yq -e '(.hostname | type) == "!!str" and (.hostname | length) > 0 and (.containers | type) == "!!seq"' \
+      "${CONFIG_DOWNLOAD_FILE}" >/dev/null 2>&1; then
+      log "config rejected (missing/invalid required fields: hostname:string, containers:array)"
+      rm -f "${CONFIG_DOWNLOAD_FILE}"
+      sleep "${SLEEP_SECONDS}"
+      continue
+    fi
+
+    mv -f "${CONFIG_DOWNLOAD_FILE}" "${CONFIG_NEW_FILE}"
 
     if [[ -f "${CONFIG_FILE}" ]] && cmp -s "${CONFIG_NEW_FILE}" "${CONFIG_FILE}"; then
       log "remote config unchanged"
@@ -64,8 +88,24 @@ while true; do
       continue
     fi
 
-    mv -f "${CONFIG_NEW_FILE}" "${CONFIG_FILE}"
-    log "config updated from remote"
+    config_apply_tmp="$(mktemp "/var/lib/your-os/config.yaml.tmp.XXXXXX")"
+    cat "${CONFIG_NEW_FILE}" > "${config_apply_tmp}"
+    mv -f "${config_apply_tmp}" "${CONFIG_FILE}"
+    log "config accepted and applied from remote"
+
+    now_epoch="$(date +%s)"
+    last_reboot_epoch=""
+    if [[ -s "${LAST_REBOOT_TRIGGER_FILE}" ]]; then
+      last_reboot_epoch="$(tr -d '[:space:]' < "${LAST_REBOOT_TRIGGER_FILE}")"
+    fi
+
+    if [[ "${last_reboot_epoch}" =~ ^[0-9]+$ ]] && (( now_epoch - last_reboot_epoch < MIN_REBOOT_INTERVAL_SECONDS )); then
+      log "reboot suppressed (too frequent)"
+      sleep "${SLEEP_SECONDS}"
+      continue
+    fi
+
+    printf '%s\n' "${now_epoch}" > "${LAST_REBOOT_TRIGGER_FILE}"
     log "triggering reboot due to config change"
     exec systemctl reboot
   else
