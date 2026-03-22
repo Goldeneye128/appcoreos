@@ -2,12 +2,14 @@
 set -euo pipefail
 
 IMAGE_TAG="appcoreos:latest"
+BUILDER_IMAGE_TAG="appcoreos-builder:latest"
 BUILD_DIR="build"
 BASE_QCOW2_IMAGE="${BUILD_DIR}/fedora-cloud-base.qcow2"
 QCOW2_IMAGE="${BUILD_DIR}/appcoreos.qcow2"
 QCOW2_IMAGE_TMP="${BUILD_DIR}/appcoreos.tmp.qcow2"
 MOUNT_DIR="${BUILD_DIR}/mnt"
 NBD_DEVICE="${NBD_DEVICE:-/dev/nbd0}"
+OS="$(uname -s)"
 
 FEDORA_CLOUD_IMAGE_URL="${FEDORA_CLOUD_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-41-1.4.qcow2}"
 
@@ -26,6 +28,7 @@ usage() {
 Usage:
   ./build.sh --target local
   ./build.sh --target proxmox
+  ./build.sh --target proxmox-internal
   ./build.sh --target mac
 EOF
 }
@@ -96,8 +99,7 @@ Run instructions:
 EOF
 }
 
-build_proxmox() {
-  require_cmd podman
+build_proxmox_internal() {
   require_cmd qemu-img
   require_cmd curl
   require_cmd tar
@@ -110,8 +112,6 @@ build_proxmox() {
 
   mkdir -p "${BUILD_DIR}" "${MOUNT_DIR}"
   rm -f "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
-
-  build_image
 
   log "downloading Fedora Cloud base image"
   curl -fsSL "${FEDORA_CLOUD_IMAGE_URL}" -o "${BASE_QCOW2_IMAGE}"
@@ -189,6 +189,47 @@ build_proxmox() {
   log "proxmox artifact ready: ${QCOW2_IMAGE}"
 }
 
+build_builder_image() {
+  log "building containerized builder image: ${BUILDER_IMAGE_TAG}"
+  podman build -t "${BUILDER_IMAGE_TAG}" -f - . <<'EOF'
+FROM quay.io/fedora/fedora:41
+
+RUN dnf -y install \
+      bash \
+      coreutils \
+      curl \
+      dnf \
+      e2fsprogs \
+      libguestfs-tools-c \
+      kmod \
+      parted \
+      qemu-img \
+      qemu-system-x86 \
+      tar \
+      util-linux \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+EOF
+}
+
+build_proxmox() {
+  require_cmd podman
+  build_image
+
+  if [[ "${OS}" == "Darwin" ]]; then
+    log "running build inside container (macOS compatibility mode)"
+    build_builder_image
+    podman run --rm -it --privileged \
+      -v "$(pwd)":/workspace \
+      -w /workspace \
+      "${BUILDER_IMAGE_TAG}" \
+      bash -c "./build.sh --target proxmox-internal"
+    return
+  fi
+
+  build_proxmox_internal
+}
+
 build_mac() {
   require_cmd qemu-system-x86_64
 
@@ -248,6 +289,9 @@ case "${TARGET}" in
     ;;
   proxmox)
     build_proxmox
+    ;;
+  proxmox-internal)
+    build_proxmox_internal
     ;;
   mac)
     build_mac
