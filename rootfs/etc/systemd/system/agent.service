@@ -1,0 +1,15 @@
+# Local agent skeleton that reads state.json and logs basic state data.
+[Unit]
+Description=Your-OS local state agent
+Documentation=man:systemd.service(5)
+After=state.service
+Wants=state.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/your-os/agent.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
