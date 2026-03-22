@@ -4,11 +4,13 @@ FROM quay.io/fedora/fedora-bootc:41
 # Install only the packages required for this bootstrap phase.
 # - podman: container runtime (used later via Quadlet)
 # - yq: parse machine-config YAML
+# - curl: remote config + API fetches
 # - NetworkManager: single networking stack (nmcli for DHCP/static)
 # - systemd: service orchestration
 RUN dnf -y install \
       podman \
       yq \
+      curl \
       NetworkManager \
       systemd \
     && dnf -y remove openssh-server \
@@ -17,6 +19,9 @@ RUN dnf -y install \
 
 # Copy our appliance filesystem overlay into the image.
 COPY rootfs/ /
+
+# Make systemd container-aware when running as an OCI container for testing.
+ENV container=oci
 
 # Ensure scripts are executable, ensure runtime path exists,
 # and enable early-boot machine-config processing.
@@ -31,3 +36,7 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && mkdir -p /etc/containers/systemd \
     && systemctl mask getty@tty1.service \
     && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service
+
+# systemd as PID 1 for containerized test runs.
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
