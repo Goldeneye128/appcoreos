@@ -59,6 +59,8 @@ for ((i=0; i<container_count; i++)); do
     echo "[Container]"
     echo "Image=${image}"
     echo "ContainerName=${name}"
+    # Enable Podman registry-based auto-update for this container.
+    echo "Label=io.containers.autoupdate=registry"
     # Keep container service behavior simple and consistent.
     echo "Restart=always"
 

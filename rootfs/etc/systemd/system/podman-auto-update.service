@@ -1,0 +1,15 @@
+# Check container registries and apply updates to auto-update-enabled containers.
+[Unit]
+Description=Podman auto-update containers
+Documentation=man:podman-auto-update(1)
+After=network-online.target containers.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Log the check start so journal clearly shows update runs.
+ExecStartPre=/usr/bin/bash -c 'echo "$(date -Iseconds) [podman-auto-update] Checking for container updates"'
+# podman auto-update restarts affected systemd-managed containers automatically.
+ExecStart=/usr/bin/podman auto-update --log-level=info
+# Log completion to make update windows easy to audit.
+ExecStartPost=/usr/bin/bash -c 'echo "$(date -Iseconds) [podman-auto-update] Update check finished"'

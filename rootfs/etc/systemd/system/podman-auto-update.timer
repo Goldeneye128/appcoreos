@@ -1,0 +1,12 @@
+# Run Podman auto-update daily.
+[Unit]
+Description=Daily Podman auto-update check
+Documentation=man:systemd.timer(5)
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=podman-auto-update.service
+
+[Install]
+WantedBy=timers.target
