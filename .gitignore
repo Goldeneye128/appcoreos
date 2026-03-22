@@ -1,0 +1,23 @@
+# Build outputs
+build/
+*.qcow2
+*.raw
+*.tmp
+*.img
+
+# Mount/runtime artifacts
+mnt/
+*.mount
+*.loop
+
+# Container/podman leftovers
+*.tar
+*.log
+
+# macOS clutter
+.DS_Store
+
+# Editor/temp files
+*~
+*.swp
+*.swo
