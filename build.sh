@@ -26,6 +26,7 @@ usage() {
 Usage:
   ./build.sh --target local
   ./build.sh --target proxmox
+  ./build.sh --target mac
 EOF
 }
 
@@ -188,6 +189,35 @@ build_proxmox() {
   log "proxmox artifact ready: ${QCOW2_IMAGE}"
 }
 
+build_mac() {
+  require_cmd qemu-system-x86_64
+
+  if [[ ! -f "${QCOW2_IMAGE}" ]]; then
+    log "qcow2 image not found at ${QCOW2_IMAGE}; running proxmox build first"
+    build_proxmox
+  fi
+
+  log "starting VM with qcow2 image: ${QCOW2_IMAGE}"
+  cat <<EOF
+
+VM controls:
+  stop VM: Ctrl+A then X
+
+Access:
+  API endpoint (host forwarded): http://127.0.0.1:8081
+  debug proxy example: http://127.0.0.1:8081/state/<machine-id>
+  debug proxy logs:   http://127.0.0.1:8081/logs/<machine-id>
+EOF
+
+  qemu-system-x86_64 \
+    -m 2048 \
+    -smp 2 \
+    -drive file="${QCOW2_IMAGE}",format=qcow2 \
+    -netdev user,id=net0,hostfwd=tcp::8081-:8081 \
+    -device e1000,netdev=net0 \
+    -nographic
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target)
@@ -217,6 +247,9 @@ case "${TARGET}" in
     ;;
   proxmox)
     build_proxmox
+    ;;
+  mac)
+    build_mac
     ;;
   *)
     echo "Invalid target: ${TARGET}" >&2
