@@ -24,7 +24,8 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && chmod 0755 /usr/lib/your-os/generate-containers.sh \
     && chmod 0755 /usr/lib/your-os/generate-state.sh \
     && chmod 0755 /usr/lib/your-os/update-os.sh \
+    && chmod 0755 /usr/lib/your-os/init-machine-id.sh \
     && chmod 0755 /usr/lib/your-os/agent.sh \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
-    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer agent.service
+    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service

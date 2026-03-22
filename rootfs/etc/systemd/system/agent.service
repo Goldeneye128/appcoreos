@@ -3,7 +3,8 @@
 Description=Your-OS local state agent
 Documentation=man:systemd.service(5)
 After=state.service
-Wants=state.service
+After=machine-id.service
+Wants=state.service machine-id.service
 
 [Service]
 Type=simple

@@ -4,7 +4,8 @@ set -euo pipefail
 STATE_FILE="/var/lib/your-os/state.json"
 CONFIG_FILE="/var/lib/your-os/config.yaml"
 CONFIG_NEW_FILE="/var/lib/your-os/config.new.yaml"
-REMOTE_CONFIG_URL="http://127.0.0.1:8081/config"
+MACHINE_ID_FILE="/var/lib/your-os/machine-id"
+REMOTE_CONFIG_BASE_URL="http://127.0.0.1:8081/config"
 SLEEP_SECONDS=30
 
 log() {
@@ -22,6 +23,15 @@ require_bin yq
 require_bin curl
 require_bin systemctl
 
+if [[ ! -s "${MACHINE_ID_FILE}" ]]; then
+  log "machine-id missing at ${MACHINE_ID_FILE}"
+  exit 1
+fi
+
+machine_id="$(tr -d '\n' < "${MACHINE_ID_FILE}")"
+remote_config_url="${REMOTE_CONFIG_BASE_URL}/${machine_id}"
+log "machine-id=${machine_id}"
+
 while true; do
   if [[ ! -f "${STATE_FILE}" ]]; then
     log "state file missing at ${STATE_FILE}"
@@ -31,11 +41,11 @@ while true; do
     log "hostname=${hostname_value} containers=${container_count}"
   fi
 
-  log "fetching remote config from ${REMOTE_CONFIG_URL}"
+  log "fetching remote config from ${remote_config_url}"
   rm -f "${CONFIG_NEW_FILE}"
   http_code="$(
     curl -sS --max-time 10 --output "${CONFIG_NEW_FILE}" --write-out "%{http_code}" \
-      "${REMOTE_CONFIG_URL}" 2>/dev/null || true
+      "${remote_config_url}" 2>/dev/null || true
   )"
 
   if [[ "${http_code}" == "200" ]]; then
