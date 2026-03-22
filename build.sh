@@ -4,14 +4,17 @@ set -euo pipefail
 IMAGE_TAG="appcoreos:latest"
 BUILDER_IMAGE_TAG="appcoreos-builder:latest"
 BUILD_DIR="build"
+LOG_DIR="build/logs"
+LOG_FILE="build/logs/build-$(date +%Y%m%d-%H%M%S).log"
 BASE_QCOW2_IMAGE="${BUILD_DIR}/fedora-cloud-base.qcow2"
 QCOW2_IMAGE="${BUILD_DIR}/appcoreos.qcow2"
 QCOW2_IMAGE_TMP="${BUILD_DIR}/appcoreos.tmp.qcow2"
 MOUNT_DIR="${BUILD_DIR}/mnt"
 NBD_DEVICE="${NBD_DEVICE:-/dev/nbd0}"
 OS="$(uname -s)"
+FEDORA_VERSION="43"
 
-FEDORA_CLOUD_IMAGE_URL="${FEDORA_CLOUD_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-41-1.4.qcow2}"
+FEDORA_CLOUD_IMAGE_URL="https://download.fedoraproject.org/pub/fedora/linux/releases/${FEDORA_VERSION}/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64.qcow2"
 
 TARGET=""
 CONTAINER_ID=""
@@ -22,6 +25,11 @@ NBD_CONNECTED=0
 log() {
   echo "$(date -Iseconds) [build] $*"
 }
+
+mkdir -p "${LOG_DIR}"
+exec > >(tee -a "${LOG_FILE}") 2>&1
+log "build started"
+log "log file: ${LOG_FILE}"
 
 usage() {
   cat <<'EOF'
@@ -113,8 +121,12 @@ build_proxmox_internal() {
   mkdir -p "${BUILD_DIR}" "${MOUNT_DIR}"
   rm -f "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
 
-  log "downloading Fedora Cloud base image"
-  curl -fsSL "${FEDORA_CLOUD_IMAGE_URL}" -o "${BASE_QCOW2_IMAGE}"
+  log "using Fedora version ${FEDORA_VERSION}"
+  log "downloading Fedora Cloud base image from ${FEDORA_CLOUD_IMAGE_URL}"
+  if ! curl -fL --retry 3 --retry-delay 2 "${FEDORA_CLOUD_IMAGE_URL}" -o "${BASE_QCOW2_IMAGE}"; then
+    echo "Failed to download Fedora ${FEDORA_VERSION} cloud image" >&2
+    exit 1
+  fi
 
   log "preparing working qcow2 image: ${QCOW2_IMAGE}"
   cp "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}"
