@@ -13,7 +13,9 @@ MOUNT_DIR="${BUILD_DIR}/mnt"
 NBD_DEVICE="${NBD_DEVICE:-/dev/nbd0}"
 OS="$(uname -s)"
 FEDORA_VERSION="43"
-FEDORA_CLOUD_IMAGE_URL="https://download.fedoraproject.org/pub/fedora/linux/releases/${FEDORA_VERSION}/Cloud/x86_64/images/latest-Fedora-Cloud-Base.x86_64.qcow2"
+FEDORA_IMAGE_VERSION="1.6"
+FEDORA_MIRROR="https://ftp.uni-stuttgart.de/fedora"
+FEDORA_CLOUD_IMAGE_URL="${FEDORA_MIRROR}/releases/${FEDORA_VERSION}/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-${FEDORA_VERSION}-${FEDORA_IMAGE_VERSION}.x86_64.qcow2"
 
 TARGET=""
 CONTAINER_ID=""
@@ -121,7 +123,8 @@ build_proxmox_internal() {
   rm -f "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
 
   log "using Fedora version ${FEDORA_VERSION}"
-  log "using latest qcow2 endpoint"
+  log "using image version ${FEDORA_IMAGE_VERSION}"
+  log "using mirror ${FEDORA_MIRROR}"
   log "downloading from ${FEDORA_CLOUD_IMAGE_URL}"
   if ! curl -fL --retry 3 --retry-delay 2 "${FEDORA_CLOUD_IMAGE_URL}" -o "${BASE_QCOW2_IMAGE}"; then
     echo "Failed to download Fedora ${FEDORA_VERSION} cloud image" >&2
