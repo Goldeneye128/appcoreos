@@ -204,17 +204,18 @@ VM controls:
   stop VM: Ctrl+A then X
 
 Access:
-  API endpoint (host forwarded): http://127.0.0.1:8081
-  debug proxy example: http://127.0.0.1:8081/state/<machine-id>
-  debug proxy logs:   http://127.0.0.1:8081/logs/<machine-id>
+  API on host:   http://127.0.0.1:8081
+  debug on host: http://127.0.0.1:9090
 EOF
 
   qemu-system-x86_64 \
+    -machine accel=tcg \
+    -cpu max \
     -m 2048 \
     -smp 2 \
-    -drive file="${QCOW2_IMAGE}",format=qcow2 \
-    -netdev user,id=net0,hostfwd=tcp::8081-:8081 \
-    -device e1000,netdev=net0 \
+    -drive file="${QCOW2_IMAGE}",format=qcow2,if=virtio \
+    -netdev user,id=net0,hostfwd=tcp::8081-:8081,hostfwd=tcp::9090-:9090 \
+    -device virtio-net-pci,netdev=net0 \
     -nographic
 }
 
