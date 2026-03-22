@@ -5,8 +5,6 @@ set -euo pipefail
 CONFIG_PATH="/var/lib/your-os/config.yaml"
 # Rootful Quadlet drop-in directory.
 QUADLET_DIR="/etc/containers/systemd"
-# Track previously generated units so stale files can be removed.
-STATE_FILE="/var/lib/your-os/generated-containers.list"
 
 log() {
   echo "[generate-containers] $*"
@@ -26,18 +24,15 @@ if [[ ! -f "${CONFIG_PATH}" ]]; then
   exit 1
 fi
 
-mkdir -p "${QUADLET_DIR}" "$(dirname "${STATE_FILE}")"
+mkdir -p "${QUADLET_DIR}"
 
-# Remove previously generated files so config is the source of truth.
-if [[ -f "${STATE_FILE}" ]]; then
-  while IFS= read -r old_name; do
-    [[ -n "${old_name}" ]] || continue
-    rm -f "${QUADLET_DIR}/${old_name}.container"
-  done < "${STATE_FILE}"
-fi
-
-# Truncate state file before writing current generation results.
-: > "${STATE_FILE}"
+# Full regeneration mode: remove all previous Quadlet container files first.
+for old_file in "${QUADLET_DIR}"/*.container; do
+  [[ -e "${old_file}" ]] || break
+  old_name="$(basename "${old_file}" .container)"
+  log "Removing old container definition: ${old_name}"
+  rm -f "${old_file}"
+done
 
 container_count="$(yq -r '.containers // [] | length' "${CONFIG_PATH}")"
 if [[ "${container_count}" -eq 0 ]]; then
@@ -77,8 +72,7 @@ for ((i=0; i<container_count; i++)); do
     echo "WantedBy=multi-user.target"
   } > "${quadlet_file}"
 
-  echo "${name}" >> "${STATE_FILE}"
-  log "Wrote ${quadlet_file}"
+  log "Creating container definition: ${name}"
 done
 
 log "Quadlet generation complete."
