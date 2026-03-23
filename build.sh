@@ -264,7 +264,8 @@ build_proxmox() {
   if [[ "${OS}" == "Darwin" ]]; then
     log "running build inside container (macOS compatibility mode)"
     build_builder_image
-    podman run --rm -it --privileged \
+    log "starting non-interactive builder container"
+    podman run --rm --privileged \
       --device /dev \
       -e LOG_FILE="${LOG_FILE}" \
       -v "$(pwd)":/workspace \
