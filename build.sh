@@ -5,12 +5,12 @@ IMAGE_TAG="appcoreos:latest"
 BUILDER_IMAGE_TAG="appcoreos-builder:latest"
 BUILD_DIR="build"
 LOG_DIR="build/logs"
-LOG_FILE="build/logs/build-$(date +%Y%m%d-%H%M%S).log"
+LOG_FILE="${LOG_FILE:-}"
 BASE_QCOW2_IMAGE="${BUILD_DIR}/fedora-cloud-base.qcow2"
 QCOW2_IMAGE="${BUILD_DIR}/appcoreos.qcow2"
 QCOW2_IMAGE_TMP="${BUILD_DIR}/appcoreos.tmp.qcow2"
 MOUNT_DIR="${BUILD_DIR}/mnt"
-NBD_DEVICE="${NBD_DEVICE:-/dev/nbd0}"
+NBD_DEVICE="${NBD_DEVICE:-}"
 OS="$(uname -s)"
 FEDORA_VERSION="43"
 FEDORA_IMAGE_VERSION="1.6"
@@ -27,10 +27,28 @@ log() {
   echo "$(date -Iseconds) [build] $*"
 }
 
-mkdir -p "${LOG_DIR}"
-exec > >(tee -a "${LOG_FILE}") 2>&1
+if [[ -f /.dockerenv ]] || grep -q container /proc/1/environ 2>/dev/null; then
+  IN_CONTAINER=1
+else
+  IN_CONTAINER=0
+fi
+
+if [[ "${IN_CONTAINER}" == "0" ]]; then
+  mkdir -p "${LOG_DIR}"
+  if [[ -z "${LOG_FILE}" ]]; then
+    LOG_FILE="${LOG_DIR}/build-$(date +%Y%m%d-%H%M%S).log"
+  fi
+  exec > >(tee -a "${LOG_FILE}") 2>&1
+fi
+
+if [[ "${IN_CONTAINER}" == "1" ]] && [[ -n "${LOG_FILE}" ]]; then
+  exec > >(tee -a "${LOG_FILE}") 2>&1
+fi
+
 log "build started"
-log "log file: ${LOG_FILE}"
+if [[ -n "${LOG_FILE}" ]]; then
+  log "log file: ${LOG_FILE}"
+fi
 
 usage() {
   cat <<'EOF'
@@ -137,7 +155,25 @@ build_proxmox_internal() {
 
   log "mounting qcow2 image"
   log "using qemu-nbd to mount qcow2"
+  log "initializing nbd devices"
   root_cmd modprobe nbd max_part=8 >/dev/null 2>&1 || true
+
+  NBD_DEVICE=""
+  for i in {0..7}; do
+    if [[ -e "/dev/nbd${i}" ]]; then
+      NBD_DEVICE="/dev/nbd${i}"
+      break
+    fi
+  done
+
+  if [[ -z "${NBD_DEVICE}" ]]; then
+    echo "No /dev/nbd device found after modprobe" >&2
+    exit 1
+  fi
+
+  log "using NBD device ${NBD_DEVICE}"
+  ls -l /dev/nbd* || true
+
   root_cmd qemu-nbd --disconnect "${NBD_DEVICE}" >/dev/null 2>&1 || true
   root_cmd qemu-nbd --connect "${NBD_DEVICE}" "${QCOW2_IMAGE}"
   NBD_CONNECTED=1
@@ -229,6 +265,7 @@ build_proxmox() {
     log "running build inside container (macOS compatibility mode)"
     build_builder_image
     podman run --rm -it --privileged \
+      -e LOG_FILE="${LOG_FILE}" \
       -v "$(pwd)":/workspace \
       -w /workspace \
       "${BUILDER_IMAGE_TAG}" \
