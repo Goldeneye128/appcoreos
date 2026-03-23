@@ -22,6 +22,7 @@ CONTAINER_ID=""
 MOUNT_METHOD=""
 CHROOT_MOUNTS_ACTIVE=0
 NBD_CONNECTED=0
+IN_CONTAINER=0
 
 log() {
   echo "$(date -Iseconds) [build] $*"
@@ -29,8 +30,6 @@ log() {
 
 if [[ -f /.dockerenv ]] || grep -q container /proc/1/environ 2>/dev/null; then
   IN_CONTAINER=1
-else
-  IN_CONTAINER=0
 fi
 
 if [[ "${IN_CONTAINER}" == "0" ]]; then
@@ -41,12 +40,11 @@ if [[ "${IN_CONTAINER}" == "0" ]]; then
   exec > >(tee -a "${LOG_FILE}") 2>&1
 fi
 
-if [[ "${IN_CONTAINER}" == "1" ]] && [[ -n "${LOG_FILE}" ]]; then
-  exec > >(tee -a "${LOG_FILE}") 2>&1
-fi
-
 log "build started"
-if [[ -n "${LOG_FILE}" ]]; then
+if [[ "${IN_CONTAINER}" == "1" ]]; then
+  log "running inside builder container"
+fi
+if [[ "${IN_CONTAINER}" == "0" ]] && [[ -n "${LOG_FILE}" ]]; then
   log "log file: ${LOG_FILE}"
 fi
 
