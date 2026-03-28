@@ -22,7 +22,9 @@ log() {
   echo "$(date -Iseconds) [build] $*"
 }
 
-if [[ -f /.dockerenv ]] || grep -q container /proc/1/environ 2>/dev/null; then
+if [[ -f /.dockerenv ]]; then
+  IN_CONTAINER=1
+elif grep -qa 'container' /proc/1/environ 2>/dev/null; then
   IN_CONTAINER=1
 fi
 
