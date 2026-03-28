@@ -92,6 +92,11 @@ build_proxmox_internal() {
   require_cmd virt-customize
   require_cmd virt-filesystems
 
+  export LIBGUESTFS_BACKEND=direct
+  export LIBGUESTFS_DEBUG=1
+  export LIBGUESTFS_TRACE=1
+  log "using libguestfs direct backend (no libvirt)"
+
   mkdir -p "${BUILD_DIR}"
   rm -f "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
 
