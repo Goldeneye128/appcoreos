@@ -17,6 +17,7 @@ FEDORA_CLOUD_IMAGE_URL="${FEDORA_MIRROR}/releases/${FEDORA_VERSION}/Cloud/x86_64
 
 TARGET=""
 IN_CONTAINER=0
+REBUILD_BUILDER=0
 
 log() {
   echo "$(date -Iseconds) [build] $*"
@@ -51,6 +52,8 @@ Usage:
   ./build.sh --target proxmox
   ./build.sh --target proxmox-internal
   ./build.sh --target mac
+Optional flags:
+  --rebuild-builder
 EOF
 }
 
@@ -127,9 +130,9 @@ build_proxmox_internal() {
 }
 
 build_builder_image() {
-  log "building containerized builder image: ${BUILDER_IMAGE_TAG}"
+  log "building builder image"
   podman build -t "${BUILDER_IMAGE_TAG}" -f - . <<'EOF'
-FROM quay.io/fedora/fedora:41
+FROM quay.io/fedora/fedora:43
 
 RUN dnf -y install \
       bash \
@@ -137,16 +140,29 @@ RUN dnf -y install \
       curl \
       dnf \
       e2fsprogs \
-      kmod \
       libguestfs-tools-c \
-      parted \
       qemu-img \
-      qemu-system-x86 \
       tar \
       util-linux \
     && dnf clean all \
     && rm -rf /var/cache/dnf
 EOF
+  log "builder image ready"
+}
+
+ensure_builder_image() {
+  if [[ "${REBUILD_BUILDER}" == "1" ]]; then
+    build_builder_image
+    return
+  fi
+
+  if podman image exists "${BUILDER_IMAGE_TAG}"; then
+    log "reusing cached builder image"
+    log "builder image ready"
+    return
+  fi
+
+  build_builder_image
 }
 
 build_proxmox() {
@@ -155,7 +171,7 @@ build_proxmox() {
 
   if [[ "${OS}" == "Darwin" ]]; then
     log "running build inside container (macOS compatibility mode)"
-    build_builder_image
+    ensure_builder_image
     log "starting non-interactive builder container"
     podman run --rm --privileged \
       --device /dev \
@@ -205,6 +221,10 @@ while [[ $# -gt 0 ]]; do
     --target)
       TARGET="${2:-}"
       shift 2
+      ;;
+    --rebuild-builder)
+      REBUILD_BUILDER=1
+      shift
       ;;
     -h|--help)
       usage
