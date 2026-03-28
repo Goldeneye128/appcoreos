@@ -65,6 +65,7 @@ require_cmd() {
 }
 
 build_image() {
+  log "using Fedora 43 for appcoreos base image"
   log "building image: ${IMAGE_TAG}"
   podman build -t "${IMAGE_TAG}" .
 }
@@ -130,6 +131,7 @@ build_proxmox_internal() {
 }
 
 build_builder_image() {
+  log "using Fedora 43 for builder image"
   log "building builder image"
   podman build -t "${BUILDER_IMAGE_TAG}" -f - . <<'EOF'
 FROM quay.io/fedora/fedora:43

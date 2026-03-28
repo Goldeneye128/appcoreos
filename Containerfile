@@ -1,5 +1,5 @@
 # Minimal immutable appliance image built in Fedora bootc style.
-FROM quay.io/fedora/fedora-bootc:41
+FROM quay.io/fedora/fedora-bootc:43
 
 # Install only the packages required for this bootstrap phase.
 # - podman: container runtime (used later via Quadlet)
