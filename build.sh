@@ -86,6 +86,8 @@ EOF
 }
 
 build_proxmox_internal() {
+  ARCH="$(uname -m)"
+
   require_cmd qemu-img
   require_cmd curl
   require_cmd virt-copy-in
@@ -95,6 +97,10 @@ build_proxmox_internal() {
   export LIBGUESTFS_BACKEND=direct
   export LIBGUESTFS_DEBUG=1
   export LIBGUESTFS_TRACE=1
+  if [[ "${ARCH}" == "aarch64" ]]; then
+    export LIBGUESTFS_ARCH=x86_64
+    log "forcing libguestfs architecture: x86_64"
+  fi
   log "using libguestfs direct backend (no libvirt)"
 
   mkdir -p "${BUILD_DIR}"
