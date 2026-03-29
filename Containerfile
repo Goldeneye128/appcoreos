@@ -15,7 +15,7 @@ RUN dnf -y install \
       python3 \
       NetworkManager \
       systemd \
-    && dnf -y remove openssh-server \
+    && dnf -y remove openssh-server openssh-clients \
     && dnf clean all \
     && rm -rf /var/cache/dnf
 
@@ -35,10 +35,13 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && chmod 0755 /usr/lib/your-os/agent.sh \
     && chmod 0755 /usr/lib/your-os/agent-debug-server.py \
     && chmod 0755 /usr/lib/your-os/tui.sh \
+    && systemctl mask sshd.service sshd.socket \
+    && rm -f /usr/lib/systemd/system/sshd* /etc/systemd/system/sshd* \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
     && systemctl mask getty@tty1.service \
-    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service
+    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service \
+    && if systemctl list-unit-files | grep -E '(ssh|sshd)'; then echo "Unexpected SSH unit files found" >&2; exit 1; fi
 
 # systemd as PID 1 for containerized test runs.
 STOPSIGNAL SIGRTMIN+3
