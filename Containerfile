@@ -19,6 +19,14 @@ RUN dnf -y install \
     && dnf clean all \
     && rm -rf /var/cache/dnf
 
+# Temporary development debug user (remove for production).
+RUN useradd -m -s /bin/bash debug \
+    && echo "debug:debug" | chpasswd \
+    && usermod -aG wheel debug \
+    && mkdir -p /etc/sudoers.d \
+    && echo "debug ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/debug \
+    && chmod 0440 /etc/sudoers.d/debug
+
 # Copy our appliance filesystem overlay into the image.
 COPY rootfs/ /
 
