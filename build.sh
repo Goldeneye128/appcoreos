@@ -131,16 +131,25 @@ build_proxmox_internal() {
   virt-customize \
     -a "${QCOW2_IMAGE}" \
     --install podman,yq,curl,python3,NetworkManager,systemd \
+    --run-command "rm -f /usr/lib/systemd/system-generators/systemd-ssh-generator" \
+    --run-command "systemctl disable sshd.service || true" \
+    --run-command "systemctl mask sshd.service || true" \
+    --run-command "systemctl mask sshd.socket || true" \
+    --run-command "systemctl mask sshd-vsock.socket || true" \
+    --run-command "systemctl mask ssh-access.target || true" \
     --run-command "systemctl mask getty.target || true" \
     --run-command "systemctl mask getty@.service || true" \
     --run-command "systemctl mask serial-getty@.service || true" \
     --run-command "systemctl mask console-getty.service || true" \
     --run-command "systemctl mask rescue.service || true" \
     --run-command "systemctl mask emergency.service || true" \
+    --run-command "systemctl disable getty@tty1.service || true" \
+    --run-command "systemctl disable serial-getty@ttyS0.service || true" \
     --run-command "if [ -e /sbin/agetty ]; then chmod 000 /sbin/agetty; fi" \
-    --run-command "if command -v grubby >/dev/null 2>&1; then grubby --update-kernel=ALL --args='console=ttyS0'; else echo 'grubby command not found; cannot set console=ttyS0' >&2; exit 1; fi" \
+    --run-command "if command -v grubby >/dev/null 2>&1; then grubby --update-kernel=ALL --args='console=ttyS0 quiet loglevel=3'; else echo 'grubby command not found; cannot set kernel console args' >&2; exit 1; fi" \
     --run-command "sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release" \
-    --run-command "systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service NetworkManager.service"
+    --run-command "systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service NetworkManager.service" \
+    --run-command "ln -sf /etc/systemd/system/tui.service /etc/systemd/system/default.target"
 
   log "repacking qcow2 image"
   qemu-img convert -f qcow2 -O qcow2 "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"

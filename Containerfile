@@ -35,7 +35,12 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && chmod 0755 /usr/lib/your-os/agent.sh \
     && chmod 0755 /usr/lib/your-os/agent-debug-server.py \
     && chmod 0755 /usr/lib/your-os/tui.sh \
-    && systemctl mask sshd.service sshd.socket \
+    && rm -f /usr/lib/systemd/system-generators/systemd-ssh-generator \
+    && (systemctl disable sshd.service || true) \
+    && (systemctl mask sshd.service || true) \
+    && (systemctl mask sshd.socket || true) \
+    && (systemctl mask sshd-vsock.socket || true) \
+    && (systemctl mask ssh-access.target || true) \
     && rm -f /usr/lib/systemd/system/sshd* /etc/systemd/system/sshd* \
     && (systemctl mask getty.target || true) \
     && (systemctl mask getty@.service || true) \
@@ -43,12 +48,15 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && (systemctl mask console-getty.service || true) \
     && (systemctl mask rescue.service || true) \
     && (systemctl mask emergency.service || true) \
+    && (systemctl disable getty@tty1.service || true) \
+    && (systemctl disable serial-getty@ttyS0.service || true) \
     && if [ -e /sbin/agetty ]; then chmod 000 /sbin/agetty; fi \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
     && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release \
     && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release \
-    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service
+    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service \
+    && ln -sf /etc/systemd/system/tui.service /etc/systemd/system/default.target
 
 # systemd as PID 1 for containerized test runs.
 STOPSIGNAL SIGRTMIN+3
