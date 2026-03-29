@@ -52,13 +52,14 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && (systemctl mask console-getty.service || true) \
     && (systemctl mask getty@tty1.service || true) \
     && (systemctl mask serial-getty@ttyS0.service || true) \
+    && (systemctl mask multi-user.target || true) \
     && (chmod 000 /sbin/agetty || true) \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
     && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release \
     && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release \
-    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service \
-    && ln -sf /etc/systemd/system/tui.service /etc/systemd/system/default.target
+    && (systemctl preset-all --preset-mode=disable || true) \
+    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service appcore.target
 
 # systemd as PID 1 for containerized test runs.
 STOPSIGNAL SIGRTMIN+3

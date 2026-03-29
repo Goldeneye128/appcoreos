@@ -1,16 +1,13 @@
 [Unit]
 Description=AppCoreOS TUI
-After=multi-user.target
-Conflicts=getty@tty1.service
+After=systemd-user-sessions.service
 
 [Service]
 ExecStart=/usr/lib/your-os/tui.sh
 StandardInput=tty
 StandardOutput=tty
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
+TTYPath=/dev/console
 Restart=always
 
 [Install]
-WantedBy=default.target
+WantedBy=appcore.target
