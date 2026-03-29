@@ -1,5 +1,5 @@
 [Unit]
-Description=Disabled getty on ttyS0
+Description=Disabled console login
 
 [Service]
 ExecStart=

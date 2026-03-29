@@ -131,7 +131,12 @@ build_proxmox_internal() {
   virt-customize \
     -a "${QCOW2_IMAGE}" \
     --install podman,yq,curl,python3,NetworkManager,systemd \
-    --run-command "systemctl mask getty.target getty@.service serial-getty@.service rescue.service emergency.service console-getty.service serial-getty@ttyS0.service getty@ttyS0.service getty@tty1.service" \
+    --run-command "systemctl mask getty.target || true" \
+    --run-command "systemctl mask getty@.service || true" \
+    --run-command "systemctl mask serial-getty@.service || true" \
+    --run-command "systemctl mask console-getty.service || true" \
+    --run-command "systemctl mask rescue.service || true" \
+    --run-command "systemctl mask emergency.service || true" \
     --run-command "if [ -e /sbin/agetty ]; then chmod 000 /sbin/agetty; fi" \
     --run-command "if command -v grubby >/dev/null 2>&1; then grubby --update-kernel=ALL --args='console=ttyS0'; else echo 'grubby command not found; cannot set console=ttyS0' >&2; exit 1; fi" \
     --run-command "sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release" \
