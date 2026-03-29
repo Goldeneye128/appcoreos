@@ -18,10 +18,26 @@ FEDORA_CLOUD_IMAGE_URL="${FEDORA_MIRROR}/releases/${FEDORA_VERSION}/Cloud/x86_64
 TARGET=""
 IN_CONTAINER=0
 REBUILD_BUILDER=0
+CLEAN_BUILD=0
 
 log() {
   echo "$(date -Iseconds) [build] $*"
 }
+
+for arg in "$@"; do
+  if [[ "${arg}" == "-d" ]]; then
+    CLEAN_BUILD=1
+    break
+  fi
+done
+
+if [[ "${CLEAN_BUILD}" == "1" ]]; then
+  echo "[build] deleting build directory"
+  if [[ -d "${BUILD_DIR}" ]] && [[ "$(realpath "${BUILD_DIR}")" != "/" ]]; then
+    rm -rf "${BUILD_DIR}/"
+  fi
+  mkdir -p "${LOG_DIR}"
+fi
 
 if [[ -f /.dockerenv ]]; then
   IN_CONTAINER=1
@@ -54,6 +70,7 @@ Usage:
   ./build.sh --target mac
 Optional flags:
   --rebuild-builder
+  -d              delete build/ before starting
 EOF
 }
 
@@ -254,6 +271,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --rebuild-builder)
       REBUILD_BUILDER=1
+      shift
+      ;;
+    -d)
+      CLEAN_BUILD=1
       shift
       ;;
     -h|--help)
