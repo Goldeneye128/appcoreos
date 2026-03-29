@@ -1,0 +1,6 @@
+[Unit]
+Description=Disabled getty on ttyS0
+
+[Service]
+ExecStart=
+ExecStart=/bin/false

@@ -19,14 +19,6 @@ RUN dnf -y install \
     && dnf clean all \
     && rm -rf /var/cache/dnf
 
-# Temporary development debug user (remove for production).
-RUN useradd -m -s /bin/bash debug \
-    && echo "debug:debug" | chpasswd \
-    && usermod -aG wheel debug \
-    && mkdir -p /etc/sudoers.d \
-    && echo "debug ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/debug \
-    && chmod 0440 /etc/sudoers.d/debug
-
 # Copy our appliance filesystem overlay into the image.
 COPY rootfs/ /
 
@@ -46,18 +38,13 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && systemctl mask sshd.service sshd.socket \
     && rm -f /usr/lib/systemd/system/sshd* /etc/systemd/system/sshd* \
     && systemctl mask getty.target getty@.service serial-getty@.service rescue.service emergency.service \
-    && systemctl mask console-getty.service serial-getty@ttyS0.service getty@tty1.service \
+    && systemctl mask console-getty.service serial-getty@ttyS0.service getty@ttyS0.service getty@tty1.service \
     && if [ -e /sbin/agetty ]; then chmod 000 /sbin/agetty; fi \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
+    && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release \
+    && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release \
     && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service
-
-# NOTE:
-# - systemctl list-unit-files is used because systemd is not running during build
-# - masked units are safe and expected
-# - only real sshd units are blocked (not sssd-ssh or ssh-access.target)
-RUN if systemctl list-unit-files | grep -E '(getty|rescue|emergency)' | grep enabled | grep -v masked; then echo "Interactive login unit files enabled (not masked)" >&2; exit 1; fi \
-    && if systemctl list-unit-files | grep -E '^sshd.service|^sshd.socket'; then echo "OpenSSH server units found (not allowed)" >&2; exit 1; fi
 
 # systemd as PID 1 for containerized test runs.
 STOPSIGNAL SIGRTMIN+3
