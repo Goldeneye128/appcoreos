@@ -1,15 +1,16 @@
 [Unit]
 Description=AppCoreOS TUI
-After=multi-user.target
-Conflicts=getty@tty1.service
+After=network.target
+Conflicts=getty@tty1.service serial-getty@ttyS0.service console-getty.service
 
 [Service]
 ExecStart=/usr/lib/your-os/tui.sh
 Restart=always
+RestartSec=1
 StandardInput=tty
 StandardOutput=tty
 StandardError=tty
-TTYPath=/dev/tty1
+TTYPath=/dev/ttyS0
 TTYReset=yes
 TTYVHangup=yes
 TTYVTDisallocate=yes

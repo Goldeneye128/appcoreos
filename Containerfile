@@ -46,6 +46,7 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && systemctl mask sshd.service sshd.socket \
     && rm -f /usr/lib/systemd/system/sshd* /etc/systemd/system/sshd* \
     && systemctl mask getty.target getty@.service serial-getty@.service rescue.service emergency.service \
+    && systemctl mask console-getty.service serial-getty@ttyS0.service getty@tty1.service \
     && if [ -e /sbin/agetty ]; then chmod 000 /sbin/agetty; fi \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
