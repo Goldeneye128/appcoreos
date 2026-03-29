@@ -32,9 +32,13 @@ for arg in "$@"; do
 done
 
 if [[ "${CLEAN_BUILD}" == "1" ]]; then
+  build_dir_realpath=""
   echo "[build] deleting build directory"
-  if [[ -d "${BUILD_DIR}" ]] && [[ "$(realpath "${BUILD_DIR}")" != "/" ]]; then
-    rm -rf "${BUILD_DIR}/"
+  if [[ -d "${BUILD_DIR}" ]]; then
+    build_dir_realpath="$(realpath "${BUILD_DIR}" 2>/dev/null || true)"
+    if [[ -n "${build_dir_realpath}" ]] && [[ "${build_dir_realpath}" != "/" ]]; then
+      rm -rf "${BUILD_DIR}/"
+    fi
   fi
   mkdir -p "${LOG_DIR}"
 fi
