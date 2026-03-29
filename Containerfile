@@ -53,7 +53,7 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && (systemctl mask serial-getty@ttyS0.service || true) \
     && (systemctl disable getty@tty1.service || true) \
     && (systemctl disable serial-getty@ttyS0.service || true) \
-    && chmod 000 /sbin/agetty || true \
+    && (chmod 000 /sbin/agetty || true) \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
     && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release \
