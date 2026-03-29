@@ -24,7 +24,7 @@ require_bin() {
 require_bin hostnamectl
 require_bin ip
 require_bin podman
-require_bin yq
+require_bin python3
 
 mkdir -p "${STATE_DIR}"
 
@@ -39,38 +39,40 @@ fi
 primary_ip="${primary_ip:-}"
 
 containers_raw="$(mktemp)"
-containers_mapped="$(mktemp)"
-trap 'rm -f "${containers_raw}" "${containers_mapped}"' EXIT
+trap 'rm -f "${containers_raw}"' EXIT
 
-if ! podman ps -a --format json > "${containers_raw}" 2>/dev/null; then
+if ! podman ps -a --format '{{.Names}}|{{.State}}' > "${containers_raw}" 2>/dev/null; then
   # Keep state generation resilient even if Podman returns an error.
-  echo "[]" > "${containers_raw}"
+  : > "${containers_raw}"
 fi
-
-yq -o=json -I=0 '
-  . // []
-  | map({
-      name: (
-        if ((.Names | type) == "!!seq")
-        then (.Names[0] // "unknown")
-        else (.Names // .Name // "unknown")
-        end
-      ),
-      status: (if ((.State // "") == "running") then "running" else "stopped" end)
-    })
-' "${containers_raw}" > "${containers_mapped}"
 
 HOSTNAME_VALUE="${hostname_value}" \
 PRIMARY_IP="${primary_ip}" \
 TIMESTAMP_VALUE="${timestamp}" \
-CONTAINERS_JSON="$(cat "${containers_mapped}")" \
-yq -o=json -I=2 -n '
-  {
-    hostname: strenv(HOSTNAME_VALUE),
-    primary_ip: strenv(PRIMARY_IP),
-    containers: (strenv(CONTAINERS_JSON) | from_json),
-    timestamp: strenv(TIMESTAMP_VALUE)
-  }
-' > "${STATE_FILE}"
+CONTAINERS_FILE="${containers_raw}" \
+python3 - <<'PY' > "${STATE_FILE}"
+import json
+import os
+
+containers = []
+containers_file = os.environ.get("CONTAINERS_FILE", "")
+if containers_file and os.path.exists(containers_file):
+    with open(containers_file, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            name, _, state = line.partition("|")
+            state_norm = "running" if state.strip().lower() == "running" else "stopped"
+            containers.append({"name": name.strip() or "unknown", "status": state_norm})
+
+payload = {
+    "hostname": os.environ.get("HOSTNAME_VALUE", ""),
+    "primary_ip": os.environ.get("PRIMARY_IP", ""),
+    "containers": containers,
+    "timestamp": os.environ.get("TIMESTAMP_VALUE", ""),
+}
+print(json.dumps(payload, indent=2))
+PY
 
 log "State generated at ${STATE_FILE}"

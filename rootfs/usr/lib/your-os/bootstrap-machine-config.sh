@@ -16,7 +16,14 @@ log() {
 mkdir -p "${RUNTIME_DIR}"
 # CHANGED: Ensure mountpoint exists and try to mount ISO media safely.
 mkdir -p /mnt/config
-mount -o ro /dev/sr0 /mnt/config >/dev/null 2>&1 || log "ISO mount skipped (no media or already mounted)."
+if mountpoint -q /mnt/config; then
+  log "ISO mountpoint already mounted: /mnt/config"
+elif [[ -b /dev/sr0 ]]; then
+  timeout 2 mount -o ro /dev/sr0 /mnt/config >/dev/null 2>&1 || \
+    log "ISO mount skipped (no media or mount timeout)."
+else
+  log "ISO device /dev/sr0 not present; skipping mount."
+fi
 
 if [[ -f "${ISO_CONFIG}" ]]; then
   log "Using ISO config source: ${ISO_CONFIG}"
@@ -35,4 +42,4 @@ EOF
 fi
 
 # Apply hostname/network from the canonical config.
-exec /usr/local/bin/apply-machine-config.sh "${CONFIG_DEST}"
+exec /usr/lib/your-os/apply-machine-config.sh "${CONFIG_DEST}"

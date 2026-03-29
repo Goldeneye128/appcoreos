@@ -1,5 +1,5 @@
-# Minimal immutable appliance image built in Fedora bootc style.
-FROM quay.io/fedora/fedora-bootc:43
+# Minimal immutable appliance image built in Universal Blue style.
+FROM ghcr.io/ublue-os/ucore:stable
 
 # Install only the packages required for this bootstrap phase.
 # - podman: container runtime (used later via Quadlet)
@@ -10,12 +10,15 @@ FROM quay.io/fedora/fedora-bootc:43
 # - systemd: service orchestration
 RUN dnf -y install \
       podman \
-      yq \
       curl \
       python3 \
       NetworkManager \
       systemd \
-    && dnf -y remove openssh-server openssh-clients \
+    && (dnf -y remove openssh-server openssh-clients || true) \
+    && curl -fL --retry 3 --retry-delay 2 \
+      "https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64" \
+      -o /usr/bin/yq \
+    && chmod 0755 /usr/bin/yq \
     && dnf clean all \
     && rm -rf /var/cache/dnf
 
@@ -27,7 +30,7 @@ ENV container=oci
 
 # Ensure scripts are executable, ensure runtime path exists,
 # and enable early-boot machine-config processing.
-RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap-machine-config.sh \
+RUN chmod 0755 /usr/lib/your-os/apply-machine-config.sh /usr/lib/your-os/bootstrap-machine-config.sh \
     && chmod 0755 /usr/lib/your-os/generate-containers.sh \
     && chmod 0755 /usr/lib/your-os/generate-state.sh \
     && chmod 0755 /usr/lib/your-os/update-os.sh \
@@ -43,6 +46,8 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && (systemctl mask sshd.socket || true) \
     && (systemctl mask sshd-vsock.socket || true) \
     && (systemctl mask ssh-access.target || true) \
+    && (systemctl disable firewalld.service || true) \
+    && (systemctl mask firewalld.service || true) \
     && rm -f /usr/lib/systemd/system/getty@.service || true \
     && rm -f /usr/lib/systemd/system/serial-getty@.service || true \
     && rm -f /usr/lib/systemd/system/console-getty.service || true \
@@ -52,14 +57,17 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && (systemctl mask console-getty.service || true) \
     && (systemctl mask getty@tty1.service || true) \
     && (systemctl mask serial-getty@ttyS0.service || true) \
-    && (systemctl mask multi-user.target || true) \
     && (chmod 000 /sbin/agetty || true) \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
     && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release \
     && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release \
-    && (systemctl preset-all --preset-mode=disable || true) \
-    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service appcore.target
+    && (systemctl preset-all || true) \
+    && (systemctl disable update-os.service update-os.timer || true) \
+    && rm -f /etc/systemd/system/update-os.service /etc/systemd/system/update-os.timer \
+    && (systemctl mask update-os.service update-os.timer || true) \
+    && (systemctl enable bootc-fetch-apply-updates.timer || true) \
+    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service agent.service tui.service
 
 # systemd as PID 1 for containerized test runs.
 STOPSIGNAL SIGRTMIN+3

@@ -15,4 +15,4 @@ TTYVTDisallocate=yes
 Restart=always
 
 [Install]
-WantedBy=appcore.target
+WantedBy=multi-user.target

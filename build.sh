@@ -3,6 +3,9 @@ set -euo pipefail
 
 IMAGE_TAG="appcoreos:latest"
 BUILDER_IMAGE_TAG="appcoreos-builder:latest"
+IMAGE_ARCH="amd64"
+BIB_TARGET_ARCH="x86_64"
+BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest"
 BUILD_DIR="build"
 LOG_DIR="build/logs"
 LOG_FILE="${LOG_FILE:-}"
@@ -86,9 +89,10 @@ require_cmd() {
 }
 
 build_image() {
-  log "using Fedora 43 for appcoreos base image"
+  log "using Universal Blue ucore:stable for appcoreos base image"
+  log "building architecture: ${IMAGE_ARCH}"
   log "building image: ${IMAGE_TAG}"
-  podman build -t "${IMAGE_TAG}" .
+  podman build --arch "${IMAGE_ARCH}" --pull=newer -t "${IMAGE_TAG}" .
 }
 
 build_local() {
@@ -157,6 +161,34 @@ build_proxmox_internal() {
   log "proxmox artifact ready: ${QCOW2_IMAGE}"
 }
 
+build_proxmox_bootc_macos() {
+  local repo_path bib_source_image output_qcow2
+
+  repo_path="$(pwd)"
+  bib_source_image="localhost/${IMAGE_TAG}"
+  output_qcow2="${repo_path}/${BUILD_DIR}/output/qcow2/disk.qcow2"
+
+  log "ensuring podman machine is running"
+  podman machine start >/dev/null 2>&1 || true
+
+  log "using Universal Blue/bootc image build flow for macOS"
+
+  log "building x86_64 image in podman machine (rootful)"
+  podman machine ssh "cd '${repo_path}' && sudo podman build --arch '${IMAGE_ARCH}' --pull=newer -t '${bib_source_image}' ."
+
+  log "building qcow2 via bootc-image-builder"
+  podman machine ssh "cd '${repo_path}' && rm -rf '${BUILD_DIR}/output' '${BUILD_DIR}/tmp' && mkdir -p '${BUILD_DIR}/output' '${BUILD_DIR}/tmp' && sudo podman run --rm --privileged --pull=newer --security-opt label=type:unconfined_t -v '${repo_path}/${BUILD_DIR}/output:/output' -v '${repo_path}/${BUILD_DIR}/tmp:/var/tmp' -v /var/lib/containers/storage:/var/lib/containers/storage '${BIB_IMAGE}' --type qcow2 --target-arch '${BIB_TARGET_ARCH}' --rootfs=xfs '${bib_source_image}'"
+
+  if [[ ! -f "${output_qcow2}" ]]; then
+    echo "bootc-image-builder did not produce expected output: ${output_qcow2}" >&2
+    exit 1
+  fi
+
+  mkdir -p "${BUILD_DIR}"
+  cp -f "${output_qcow2}" "${QCOW2_IMAGE}"
+  log "proxmox artifact ready: ${QCOW2_IMAGE}"
+}
+
 build_builder_image() {
   log "using Fedora 43 for builder image"
   log "building builder image"
@@ -196,22 +228,13 @@ ensure_builder_image() {
 
 build_proxmox() {
   require_cmd podman
-  build_image
 
   if [[ "${OS}" == "Darwin" ]]; then
-    log "running build inside container (macOS compatibility mode)"
-    ensure_builder_image
-    log "starting non-interactive builder container"
-    podman run --rm --privileged \
-      --device /dev \
-      -e LOG_FILE="${LOG_FILE}" \
-      -v "$(pwd)":/workspace \
-      -w /workspace \
-      "${BUILDER_IMAGE_TAG}" \
-      bash -c "./build.sh --target proxmox-internal"
+    build_proxmox_bootc_macos
     return
   fi
 
+  build_image
   build_proxmox_internal
 }
 
