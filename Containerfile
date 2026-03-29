@@ -49,10 +49,14 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && if [ -e /sbin/agetty ]; then chmod 000 /sbin/agetty; fi \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
-    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service \
-    && if systemctl list-units --type=service | grep -E '(getty|rescue|emergency)'; then echo "Interactive login services are running" >&2; exit 1; fi \
-    && if systemctl list-unit-files | grep -E '(getty|rescue|emergency)' | grep enabled | grep -v masked; then echo "Interactive login unit files enabled (not masked)" >&2; exit 1; fi \
-    && if systemctl list-unit-files | grep -E '(ssh|sshd)'; then echo "Unexpected SSH unit files found" >&2; exit 1; fi
+    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service
+
+# NOTE:
+# - systemctl list-unit-files is used because systemd is not running during build
+# - masked units are safe and expected
+# - only real sshd units are blocked (not sssd-ssh or ssh-access.target)
+RUN if systemctl list-unit-files | grep -E '(getty|rescue|emergency)' | grep enabled | grep -v masked; then echo "Interactive login unit files enabled (not masked)" >&2; exit 1; fi \
+    && if systemctl list-unit-files | grep -E '^sshd.service|^sshd.socket'; then echo "OpenSSH server units found (not allowed)" >&2; exit 1; fi
 
 # systemd as PID 1 for containerized test runs.
 STOPSIGNAL SIGRTMIN+3
