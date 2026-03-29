@@ -1,125 +1,147 @@
-#!/usr/bin/env bash
-set -u
+#!/usr/bin/env python3
+"""AppCoreOS full-screen TUI dashboard using curses."""
 
-REFRESH_SECONDS=2
-APP_NAME="AppCoreOS"
+import curses
+import datetime as dt
+import re
+import shutil
+import socket
+import subprocess
+import time
+from typing import List, Tuple
 
-# Ignore common termination signals so the dashboard does not exit unexpectedly.
-trap '' HUP INT TERM
+APP_NAME = "appcoreos"
+FRAME_DELAY_SECONDS = 0.5
 
-clear_screen() {
-  printf '\033[2J\033[H'
-}
 
-get_terminal_width() {
-  local rows cols
+def run_command(command: List[str]) -> str:
+    """Run a command and return stdout as text, or empty string on failure."""
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+    except Exception:
+        return ""
 
-  if read -r rows cols < <(stty size 2>/dev/null); then
-    if [[ -n "${cols}" ]] && [[ "${cols}" =~ ^[0-9]+$ ]] && (( cols > 0 )); then
-      printf '%s\n' "${cols}"
-      return
-    fi
-  fi
 
-  printf '80\n'
-}
+def get_hostname() -> str:
+    name = run_command(["hostnamectl", "--static"])
+    if not name:
+        name = socket.gethostname()
+    return name or "unknown"
 
-center_text() {
-  local text="$1"
-  local width padding
 
-  width="$(get_terminal_width)"
-  padding=$(( (width - ${#text}) / 2 ))
-  if (( padding < 0 )); then
-    padding=0
-  fi
+def get_primary_ip() -> str:
+    route_info = run_command(["ip", "-4", "route", "get", "1.1.1.1"])
+    if route_info:
+        match = re.search(r"\bsrc\s+(\d+\.\d+\.\d+\.\d+)", route_info)
+        if match:
+            return match.group(1)
 
-  printf '%*s%s\n' "${padding}" "" "${text}"
-}
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("1.1.1.1", 80))
+            return sock.getsockname()[0]
+    except Exception:
+        return "unknown"
 
-get_hostname_value() {
-  local value=""
 
-  if command -v hostnamectl >/dev/null 2>&1; then
-    value="$(hostnamectl --static 2>/dev/null || true)"
-  fi
+def get_containers() -> List[Tuple[str, str, str]]:
+    if shutil.which("podman") is None:
+        return [("podman", "unavailable", "")]
 
-  if [[ -z "${value}" ]] && command -v hostname >/dev/null 2>&1; then
-    value="$(hostname 2>/dev/null || true)"
-  fi
+    output = run_command(["podman", "ps", "--format", "{{.Names}}|{{.Image}}|{{.Status}}"])
+    if not output:
+        return []
 
-  [[ -n "${value}" ]] && printf '%s\n' "${value}" || printf 'unknown\n'
-}
+    containers: List[Tuple[str, str, str]] = []
+    for line in output.splitlines():
+        parts = line.split("|", 2)
+        while len(parts) < 3:
+            parts.append("")
+        name, image, status = [p.strip() or "unknown" for p in parts]
+        containers.append((name, image, status))
+    return containers
 
-get_primary_ip_value() {
-  local ip=""
 
-  if command -v ip >/dev/null 2>&1; then
-    ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')"
-    if [[ -z "${ip}" ]]; then
-      ip="$(ip -4 addr show scope global 2>/dev/null | awk '/inet / {split($2, a, "/"); print a[1]; exit}')"
-    fi
-  fi
+def safe_addstr(stdscr: curses.window, y: int, x: int, text: str, attr: int = 0) -> None:
+    """Write text safely inside screen bounds."""
+    height, width = stdscr.getmaxyx()
+    if y < 0 or y >= height or x >= width:
+        return
+    max_len = max(width - x - 1, 0)
+    if max_len == 0:
+        return
+    stdscr.addnstr(y, x, text, max_len, attr)
 
-  if [[ -z "${ip}" ]] && command -v hostname >/dev/null 2>&1; then
-    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  fi
 
-  [[ -n "${ip}" ]] && printf '%s\n' "${ip}" || printf 'unknown\n'
-}
+def draw_dashboard(stdscr: curses.window) -> None:
+    curses.curs_set(0)
+    stdscr.nodelay(True)
+    stdscr.timeout(1)
 
-print_containers() {
-  local container_lines
-  local line_count
+    if curses.has_colors():
+        curses.start_color()
+        curses.use_default_colors()
+        curses.init_pair(1, curses.COLOR_CYAN, -1)
+        title_attr = curses.A_BOLD | curses.color_pair(1)
+    else:
+        title_attr = curses.A_BOLD
 
-  if ! command -v podman >/dev/null 2>&1; then
-    echo "podman unavailable"
-    return
-  fi
+    while True:
+        stdscr.erase()
+        height, width = stdscr.getmaxyx()
 
-  container_lines="$(podman ps --format '{{.Names}}|{{.Image}}|{{.Status}}' 2>/dev/null || true)"
-  if [[ -z "${container_lines}" ]]; then
-    echo "none"
-    return
-  fi
+        hostname = get_hostname()
+        primary_ip = get_primary_ip()
+        now = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        containers = get_containers()
 
-  line_count=0
-  while IFS='|' read -r name image status; do
-    [[ -z "${name}${image}${status}" ]] && continue
-    printf -- "- %s | %s | %s\n" "${name:-unknown}" "${image:-unknown}" "${status:-unknown}"
-    line_count=$((line_count + 1))
-  done <<< "${container_lines}"
+        title_x = max((width - len(APP_NAME)) // 2, 0)
+        safe_addstr(stdscr, 0, title_x, APP_NAME, title_attr)
 
-  if (( line_count == 0 )); then
-    echo "none"
-  fi
-}
+        safe_addstr(stdscr, 2, 2, f"Hostname: {hostname}")
+        safe_addstr(stdscr, 3, 2, f"Primary IP: {primary_ip}")
+        safe_addstr(stdscr, 4, 2, f"Time: {now}")
 
-draw_dashboard() {
-  local hostname_value ip_value current_time
+        safe_addstr(stdscr, 6, 2, "Containers", curses.A_BOLD)
+        safe_addstr(stdscr, 7, 2, "NAME                IMAGE                                STATUS")
+        safe_addstr(stdscr, 8, 2, "----------------------------------------------------------------")
 
-  hostname_value="$(get_hostname_value)"
-  ip_value="$(get_primary_ip_value)"
-  current_time="$(date '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || echo unknown)"
+        row = 9
+        if containers:
+            for name, image, status in containers:
+                if row >= height - 1:
+                    break
+                line = f"{name:<18} {image:<36} {status}"
+                safe_addstr(stdscr, row, 2, line)
+                row += 1
+        else:
+            safe_addstr(stdscr, row, 2, "No running containers")
 
-  clear_screen
-  center_text "${APP_NAME}"
-  echo
-  echo "Hostname: ${hostname_value}"
-  echo "Primary IP: ${ip_value}"
-  echo "Current time: ${current_time}"
-  echo
-  echo "Containers:"
-  print_containers
-  echo
-  echo "Refreshing every ${REFRESH_SECONDS}s"
-}
+        stdscr.refresh()
 
-main() {
-  while true; do
-    draw_dashboard || true
-    sleep "${REFRESH_SECONDS}" || true
-  done
-}
+        key = stdscr.getch()
+        if key == curses.KEY_RESIZE:
+            continue
 
-main
+        time.sleep(FRAME_DELAY_SECONDS)
+
+
+def main() -> None:
+    while True:
+        try:
+            curses.wrapper(draw_dashboard)
+        except Exception:
+            time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()
