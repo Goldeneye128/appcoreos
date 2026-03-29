@@ -35,24 +35,23 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && chmod 0755 /usr/lib/your-os/agent.sh \
     && chmod 0755 /usr/lib/your-os/agent-debug-server.py \
     && chmod 0755 /usr/lib/your-os/tui.sh \
-    && rm -f /usr/lib/systemd/system-generators/systemd-getty-generator \
-    && rm -f /usr/lib/systemd/system-generators/systemd-ssh-generator \
-    && rm -f /usr/lib/systemd/system/sshd* /etc/systemd/system/sshd* \
-    && (systemctl disable sshd.service || true) \
+    && rm -f /usr/lib/systemd/system-generators/systemd-getty-generator || true \
+    && rm -f /usr/lib/systemd/system-generators/systemd-ssh-generator || true \
+    && rm -f /usr/lib/systemd/system/sshd* || true \
+    && rm -f /etc/systemd/system/sshd* || true \
     && (systemctl mask sshd.service || true) \
     && (systemctl mask sshd.socket || true) \
     && (systemctl mask sshd-vsock.socket || true) \
     && (systemctl mask ssh-access.target || true) \
-    && rm -f /usr/lib/systemd/system/getty* /usr/lib/systemd/system/serial-getty* /usr/lib/systemd/system/console-getty.service \
-    && rm -f /etc/systemd/system/getty* /etc/systemd/system/serial-getty* /etc/systemd/system/console-getty.service \
+    && rm -f /usr/lib/systemd/system/getty@.service || true \
+    && rm -f /usr/lib/systemd/system/serial-getty@.service || true \
+    && rm -f /usr/lib/systemd/system/console-getty.service || true \
     && (systemctl mask getty.target || true) \
     && (systemctl mask getty@.service || true) \
     && (systemctl mask serial-getty@.service || true) \
     && (systemctl mask console-getty.service || true) \
     && (systemctl mask getty@tty1.service || true) \
     && (systemctl mask serial-getty@ttyS0.service || true) \
-    && (systemctl disable getty@tty1.service || true) \
-    && (systemctl disable serial-getty@ttyS0.service || true) \
     && (chmod 000 /sbin/agetty || true) \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
