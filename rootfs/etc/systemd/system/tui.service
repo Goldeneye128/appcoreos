@@ -6,7 +6,11 @@ After=systemd-user-sessions.service
 ExecStart=/usr/lib/your-os/tui.sh
 StandardInput=tty
 StandardOutput=tty
-TTYPath=/dev/console
+StandardError=tty
+TTYPath=/dev/ttyS0
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
 Restart=always
 
 [Install]
