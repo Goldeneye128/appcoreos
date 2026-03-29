@@ -10,10 +10,13 @@ if [[ ! -f "${IMAGE}" ]]; then
 fi
 
 echo "[runvm] starting VM..."
+echo "[runvm] image: ${IMAGE}"
+echo "[runvm] mode: software emulation (tcg)"
 
 exec qemu-system-x86_64 \
+  -machine accel=tcg \
   -m 2048 \
-  -cpu host \
+  -cpu max \
   -drive file="${IMAGE}",format=qcow2 \
   -nographic \
   -serial mon:stdio \
