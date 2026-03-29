@@ -37,10 +37,12 @@ RUN chmod 0755 /usr/local/bin/apply-machine-config.sh /usr/lib/your-os/bootstrap
     && chmod 0755 /usr/lib/your-os/tui.sh \
     && systemctl mask sshd.service sshd.socket \
     && rm -f /usr/lib/systemd/system/sshd* /etc/systemd/system/sshd* \
+    && systemctl mask getty.target getty@.service serial-getty@.service rescue.service emergency.service \
+    && if [ -e /sbin/agetty ]; then chmod 000 /sbin/agetty; fi \
     && mkdir -p /var/lib/your-os \
     && mkdir -p /etc/containers/systemd \
-    && systemctl mask getty@tty1.service \
     && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service \
+    && if systemctl list-unit-files | grep -E '(getty|rescue|emergency)' | grep enabled; then echo "Unexpected interactive login unit files enabled" >&2; exit 1; fi \
     && if systemctl list-unit-files | grep -E '(ssh|sshd)'; then echo "Unexpected SSH unit files found" >&2; exit 1; fi
 
 # systemd as PID 1 for containerized test runs.

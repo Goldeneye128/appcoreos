@@ -131,7 +131,8 @@ build_proxmox_internal() {
   virt-customize \
     -a "${QCOW2_IMAGE}" \
     --install podman,yq,curl,python3,NetworkManager,systemd \
-    --run-command "systemctl mask getty@tty1.service" \
+    --run-command "systemctl mask getty.target getty@.service serial-getty@.service rescue.service emergency.service" \
+    --run-command "if [ -e /sbin/agetty ]; then chmod 000 /sbin/agetty; fi" \
     --run-command "systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer update-os.timer machine-id.service agent.service tui.service NetworkManager.service"
 
   log "repacking qcow2 image"
