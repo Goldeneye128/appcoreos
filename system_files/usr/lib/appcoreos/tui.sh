@@ -169,6 +169,7 @@ def draw_dashboard(stdscr: curses.window) -> None:
         primary_ip = get_primary_ip()
         machine_id = get_machine_id()
         machine_id_short = machine_id[:12] if machine_id != "unknown" else machine_id
+        machine_id_remote = machine_id if len(machine_id) <= 20 else f"{machine_id[:20]}..."
         last_update = get_last_update()
         state_timestamp = get_state_timestamp()
         now = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -193,9 +194,9 @@ def draw_dashboard(stdscr: curses.window) -> None:
         safe_addstr(stdscr, y + 5, x, f"Last OS Update: {last_update}")
 
         safe_addstr(stdscr, y + 7, x, "Connection Help", curses.A_BOLD)
-        safe_addstr(stdscr, y + 8, x, f"Remote config API : {REMOTE_CONFIG_BASE_URL}/{machine_id}")
-        safe_addstr(stdscr, y + 9, x, "Local debug API   : http://127.0.0.1:9090")
-        safe_addstr(stdscr, y + 10, x, "QEMU host access  : forward host tcp/9090 -> guest tcp/9090")
+        safe_addstr(stdscr, y + 8, x, f"Config source     : {REMOTE_CONFIG_BASE_URL}/{machine_id_remote} (guest -> host)")
+        safe_addstr(stdscr, y + 9, x, "Debug API (host)  : http://127.0.0.1:9090")
+        safe_addstr(stdscr, y + 10, x, "Guest IP note     : 10.0.2.x is NAT-only in QEMU user-net")
         safe_addstr(stdscr, y + 11, x, "Network mode      : DHCP (QEMU user networking)")
 
         table_top = y + 13

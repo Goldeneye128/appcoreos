@@ -168,6 +168,7 @@ VM controls:
 Access:
   API on host:   http://127.0.0.1:8081
   debug on host: http://127.0.0.1:9090
+  note: guest 10.0.2.x is NAT-internal in user-net mode
 EOF_RUN
 
   qemu-system-x86_64 \
