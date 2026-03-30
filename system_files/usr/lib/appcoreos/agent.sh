@@ -7,7 +7,7 @@ CONFIG_NEW_FILE="/var/lib/appcoreos/config.new.yaml"
 CONFIG_DOWNLOAD_FILE="/var/lib/appcoreos/config.new.yaml.download"
 LAST_REBOOT_TRIGGER_FILE="/var/lib/appcoreos/last-reboot-trigger"
 MACHINE_ID_FILE="/var/lib/appcoreos/machine-id"
-REMOTE_CONFIG_BASE_URL="http://10.0.2.2:8081/config"
+REMOTE_CONFIG_BASE_URL_DEFAULT="http://10.0.2.2:8081/config"
 DEBUG_SERVER_SCRIPT="/usr/lib/appcoreos/agent-debug-server.py"
 MAX_CONFIG_BYTES=1048576
 MIN_REBOOT_INTERVAL_SECONDS=60
@@ -30,6 +30,20 @@ require_bin systemctl
 require_bin cmp
 require_bin mktemp
 require_bin python3
+require_bin ip
+
+get_gateway_ip() {
+  ip -4 route show default 2>/dev/null | awk '
+    /^default/ {
+      for (i = 1; i <= NF; i++) {
+        if ($i == "via") {
+          print $(i + 1)
+          exit
+        }
+      }
+    }
+  '
+}
 
 if [[ ! -s "${MACHINE_ID_FILE}" ]]; then
   log "machine-id missing at ${MACHINE_ID_FILE}"
@@ -37,8 +51,14 @@ if [[ ! -s "${MACHINE_ID_FILE}" ]]; then
 fi
 
 machine_id="$(tr -d '\n' < "${MACHINE_ID_FILE}")"
-remote_config_url="${REMOTE_CONFIG_BASE_URL}/${machine_id}"
+gateway_ip="$(get_gateway_ip || true)"
+remote_config_base_url="${REMOTE_CONFIG_BASE_URL_DEFAULT}"
+if [[ "${gateway_ip}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+  remote_config_base_url="http://${gateway_ip}:8081/config"
+fi
+remote_config_url="${remote_config_base_url}/${machine_id}"
 log "machine-id=${machine_id}"
+log "config-endpoint=${remote_config_url}"
 
 if [[ ! -f "${DEBUG_SERVER_SCRIPT}" ]]; then
   log "debug server missing at ${DEBUG_SERVER_SCRIPT}"

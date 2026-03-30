@@ -153,6 +153,10 @@ build_proxmox() {
 
 build_mac() {
   require_cmd qemu-system-x86_64
+  local net_cidr net_host_ip net_dhcp_start
+  net_cidr="192.168.122.0/24"
+  net_host_ip="192.168.122.1"
+  net_dhcp_start="192.168.122.10"
 
   if [[ ! -f "${QCOW2_IMAGE}" ]]; then
     log "qcow2 image missing; running proxmox build first"
@@ -168,7 +172,7 @@ VM controls:
 Access:
   API on host:   http://127.0.0.1:8081
   debug on host: http://127.0.0.1:9090
-  note: guest 10.0.2.x is NAT-internal in user-net mode
+  note: guest 192.168.122.x is NAT-internal in user-net mode
 EOF_RUN
 
   qemu-system-x86_64 \
@@ -177,7 +181,7 @@ EOF_RUN
     -m 2048 \
     -smp 2 \
     -drive file="${QCOW2_IMAGE}",format=qcow2,if=virtio \
-    -netdev user,id=net0,hostfwd=tcp::9090-:9090 \
+    -netdev user,id=net0,net="${net_cidr}",host="${net_host_ip}",dhcpstart="${net_dhcp_start}",hostfwd=tcp::9090-:9090 \
     -device virtio-net-pci,netdev=net0 \
     -nographic
 }

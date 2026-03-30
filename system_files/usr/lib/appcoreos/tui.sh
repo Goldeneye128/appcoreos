@@ -17,7 +17,7 @@ FRAME_DELAY_SECONDS = 0.5
 STATE_FILE = Path("/var/lib/appcoreos/state.json")
 LAST_UPDATE_FILE = Path("/var/lib/appcoreos/last-update")
 MACHINE_ID_FILE = Path("/var/lib/appcoreos/machine-id")
-REMOTE_CONFIG_BASE_URL = "http://10.0.2.2:8081/config"
+REMOTE_CONFIG_BASE_URL_DEFAULT = "http://10.0.2.2:8081/config"
 
 
 def run_command(command: List[str]) -> str:
@@ -57,6 +57,22 @@ def get_primary_ip() -> str:
             return sock.getsockname()[0]
     except Exception:
         return "unknown"
+
+
+def get_gateway_ip() -> str:
+    route_info = run_command(["ip", "-4", "route", "show", "default"])
+    if route_info:
+        match = re.search(r"\bvia\s+(\d+\.\d+\.\d+\.\d+)", route_info)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def get_remote_config_base_url() -> str:
+    gateway_ip = get_gateway_ip()
+    if gateway_ip:
+        return f"http://{gateway_ip}:8081/config"
+    return REMOTE_CONFIG_BASE_URL_DEFAULT
 
 
 def get_machine_id() -> str:
@@ -170,6 +186,7 @@ def draw_dashboard(stdscr: curses.window) -> None:
         machine_id = get_machine_id()
         machine_id_short = machine_id[:12] if machine_id != "unknown" else machine_id
         machine_id_remote = machine_id if len(machine_id) <= 20 else f"{machine_id[:20]}..."
+        remote_config_base_url = get_remote_config_base_url()
         last_update = get_last_update()
         state_timestamp = get_state_timestamp()
         now = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -194,9 +211,9 @@ def draw_dashboard(stdscr: curses.window) -> None:
         safe_addstr(stdscr, y + 5, x, f"Last OS Update: {last_update}")
 
         safe_addstr(stdscr, y + 7, x, "Connection Help", curses.A_BOLD)
-        safe_addstr(stdscr, y + 8, x, f"Config source     : {REMOTE_CONFIG_BASE_URL}/{machine_id_remote} (guest -> host)")
+        safe_addstr(stdscr, y + 8, x, f"Config source     : {remote_config_base_url}/{machine_id_remote} (guest -> host)")
         safe_addstr(stdscr, y + 9, x, "Debug API (host)  : http://127.0.0.1:9090")
-        safe_addstr(stdscr, y + 10, x, "Guest IP note     : 10.0.2.x is NAT-only in QEMU user-net")
+        safe_addstr(stdscr, y + 10, x, "Guest IP note     : user-net IP is NAT-only (use host 127.0.0.1:9090)")
         safe_addstr(stdscr, y + 11, x, "Network mode      : DHCP (QEMU user networking)")
 
         table_top = y + 13
