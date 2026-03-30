@@ -1,0 +1,13 @@
+# Evaluate staged-update reboot policy frequently; reboot only in maintenance window.
+[Unit]
+Description=AppCoreOS maintenance-window reboot checker
+Documentation=man:systemd.timer(5)
+
+[Timer]
+OnCalendar=*:0/15
+RandomizedDelaySec=60
+Persistent=true
+Unit=appcoreos-reboot-window.service
+
+[Install]
+WantedBy=timers.target

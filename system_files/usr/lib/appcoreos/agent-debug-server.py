@@ -263,6 +263,36 @@ def collect_containers() -> tuple[int, dict]:
   return (200, {"containers": containers})
 
 
+def get_update_status() -> tuple[int, dict]:
+  if not Path("/run/ostree-booted").exists():
+    return (200, {"ostree_booted": False, "pending_deployment": False})
+
+  rc, out, err = run_command(["rpm-ostree", "status", "--json"])
+  if rc != 0:
+    return (500, {"error": err.strip() or "failed to query rpm-ostree status"})
+
+  try:
+    status_data = json.loads(out)
+  except Exception:
+    return (500, {"error": "invalid rpm-ostree status json"})
+
+  deployments = status_data.get("deployments", [])
+  pending = any(deployment.get("booted") is not True for deployment in deployments)
+  booted = next((deployment for deployment in deployments if deployment.get("booted") is True), None)
+  staged = next((deployment for deployment in deployments if deployment.get("staged") is True), None)
+
+  return (
+    200,
+    {
+      "ostree_booted": True,
+      "pending_deployment": pending,
+      "booted_checksum": (booted or {}).get("checksum", ""),
+      "staged_checksum": (staged or {}).get("checksum", ""),
+      "deployments": len(deployments),
+    },
+  )
+
+
 class Handler(BaseHTTPRequestHandler):
   def log_message(self, format: str, *args) -> None:
     return
@@ -375,6 +405,12 @@ class Handler(BaseHTTPRequestHandler):
           },
         },
       )
+      return
+
+    if path == "/v1/host/update-status":
+      log("GET /v1/host/update-status")
+      code, payload = get_update_status()
+      self._write_json(code, payload)
       return
 
     if path in {"/logs", "/v1/logs/journal"}:
@@ -612,9 +648,17 @@ class Handler(BaseHTTPRequestHandler):
       if path == "/v1/host/update":
         rc, _, err = run_command(["systemctl", "start", "update-os.service"])
         if rc == 0:
-          self._write_json(202, {"result": "accepted", "action": "update"})
+          self._write_json(202, {"result": "accepted", "action": "update-stage"})
         else:
-          self._write_json(500, {"error": err.strip() or "failed to trigger update-os.service"})
+          _, j_out, _ = run_command(["journalctl", "-u", "update-os.service", "-n", "20", "--no-pager"])
+          self._write_json(
+            500,
+            {
+              "error": "failed to stage host update",
+              "systemctl": err.strip() or "failed to trigger update-os.service",
+              "journal_tail": (j_out or "").strip()[-4000:],
+            },
+          )
         return
       self._write_json(501, {"error": "rollback not implemented"})
       return

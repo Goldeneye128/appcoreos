@@ -104,3 +104,12 @@ Startup flow:
 - Trust/pin node certificates from provisioning data.
 - Add full strategic merge patch for machine config.
 - Add dedicated rollback semantics for host updates.
+
+## 10. Host Update Policy
+
+- `bootc-fetch-apply-updates.timer` handles image-based update staging.
+- `appcoreos-reboot-window.timer` runs every 15 minutes and reboots only if:
+  - a staged deployment is pending, and
+  - current UTC time is in configured maintenance window.
+- API endpoint `POST /v1/host/update` triggers immediate stage check (`update-os.service`).
+- Update staging requires a reachable container image source (not `localhost/...`).

@@ -1,0 +1,10 @@
+# Stage AppCoreOS host updates using bootc/rpm-ostree tooling.
+[Unit]
+Description=AppCoreOS stage host update
+Documentation=man:bootc(8) man:rpm-ostree(1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/appcoreos/update-os.sh

@@ -9,6 +9,7 @@ enable machine-id.service
 enable agent.service
 enable tui.service
 enable bootc-fetch-apply-updates.timer
+enable appcoreos-reboot-window.timer
 
 disable tuned.service
 disable setroubleshootd.service

@@ -63,10 +63,23 @@ curl -k -H "Authorization: Bearer <API_KEY>" https://127.0.0.1:9090/v1/state
 
 - Container/workload updates: `podman-auto-update.timer`
 - Host OS updates: image-based model (bootc/rpm-ostree flow)
+- Staging: `bootc-fetch-apply-updates.timer`
+- Controlled reboot policy: `appcoreos-reboot-window.timer` (maintenance-window gated)
 - Daily image publication workflow exists in:
   - `.github/workflows/daily-image-build.yml`
 
 If nodes track a published image tag (for example GHCR `:latest` or a channel tag), they can consume updates from that registry image.
+For local qcow2 builds that reference `localhost/...`, host updates cannot be fetched until you rebase to a reachable registry image.
+
+Optional machine-config policy:
+
+```yaml
+updates:
+  auto_reboot: true
+  maintenance_window_utc:
+    start: "03:00"
+    end: "05:00"
+```
 
 ## Security Model
 

@@ -1,0 +1,9 @@
+# Reboot into staged deployment only during the configured maintenance window.
+[Unit]
+Description=AppCoreOS controlled reboot window for staged updates
+Documentation=man:systemd.service(5)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/appcoreos/reboot-if-update-window.sh

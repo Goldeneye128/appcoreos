@@ -124,8 +124,11 @@ Network config payload (static):
 
 - `POST /v1/host/reboot`
 - `POST /v1/host/shutdown`
-- `POST /v1/host/update`
+- `POST /v1/host/update` (stage host update check/apply, no immediate reboot)
+- `GET /v1/host/update-status`
 - `POST /v1/host/rollback` (currently returns not implemented)
+
+Note: staging requires the host to track a reachable image reference. If the deployment is based on `localhost/...` (common in local test builds), staging will fail until rebased to a registry URL.
 
 ### Disk and Mounts
 
@@ -148,3 +151,18 @@ This API follows Talos-style principles adapted for AppCoreOS:
 - API key is bootstrap auth; mTLS RBAC is planned.
 - `PATCH /v1/machine-config` currently appends YAML patch text (minimal behavior).
 - `POST /v1/host/rollback` placeholder only.
+
+## Update Window Config
+
+Optional fields in `/var/lib/appcoreos/config.yaml`:
+
+```yaml
+updates:
+  auto_reboot: true
+  maintenance_window_utc:
+    start: "03:00"
+    end: "05:00"
+```
+
+- Staging runs via bootc/rpm-ostree update flow.
+- Reboot occurs only when a staged deployment exists and current UTC time is inside the window.
