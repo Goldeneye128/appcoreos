@@ -54,6 +54,8 @@ RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/boo
     && chmod 0755 /usr/lib/appcoreos/tui.sh \
     && rm -f /usr/lib/systemd/system-generators/systemd-getty-generator || true \
     && rm -f /usr/lib/systemd/system-generators/systemd-ssh-generator || true \
+    && rm -f /usr/lib/systemd/system/coreos-touch-run-agetty.service || true \
+    && rm -f /usr/lib/systemd/system/coreos-check-ssh-keys.service || true \
     && rm -f /usr/lib/systemd/system/sshd* || true \
     && rm -f /etc/systemd/system/sshd* || true \
     && (systemctl mask sshd.service || true) \
@@ -67,6 +69,7 @@ RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/boo
     && (systemctl mask serial-getty@.service || true) \
     && (systemctl mask console-getty.service || true) \
     && (systemctl mask coreos-touch-run-agetty.service || true) \
+    && (systemctl mask coreos-check-ssh-keys.service || true) \
     && (systemctl mask getty@tty1.service || true) \
     && (systemctl mask serial-getty@ttyS0.service || true) \
     && mkdir -p /var/lib/appcoreos \
@@ -75,7 +78,7 @@ RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/boo
     && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release \
     && (systemctl preset-all || true) \
     && (systemctl enable bootc-fetch-apply-updates.timer || true) \
-    && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service agent.service tui.service
+    && systemctl enable appcore.target machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service agent.service tui.service
 
 # systemd as PID 1 for containerized test runs.
 STOPSIGNAL SIGRTMIN+3

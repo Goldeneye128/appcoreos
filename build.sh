@@ -55,7 +55,7 @@ safe_clean_build_dir() {
   if [[ -d "${BUILD_DIR}" ]]; then
     build_realpath="$(realpath "${BUILD_DIR}" 2>/dev/null || true)"
     if [[ -n "${build_realpath}" && "${build_realpath}" != "/" ]]; then
-      rm -rf "${BUILD_DIR}/"
+      rm -rf -- "${BUILD_DIR:?}/"
     fi
   fi
 }

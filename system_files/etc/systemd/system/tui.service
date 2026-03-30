@@ -1,6 +1,7 @@
 [Unit]
 Description=AppCoreOS TUI
-After=systemd-user-sessions.service
+After=basic.target
+Before=getty.target
 Conflicts=getty@tty1.service serial-getty@ttyS0.service console-getty.service
 
 [Service]
@@ -16,4 +17,4 @@ Restart=always
 RestartSec=1
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=appcore.target

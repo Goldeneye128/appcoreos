@@ -1,0 +1,9 @@
+[Unit]
+Description=AppCoreOS Appliance Target
+Documentation=man:systemd.special(7)
+Wants=timers.target machine-id.service containers.service agent.service tui.service
+After=basic.target
+AllowIsolate=yes
+
+[Install]
+Alias=default.target

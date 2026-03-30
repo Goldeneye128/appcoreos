@@ -25,6 +25,10 @@ if [[ ! -f "${CONFIG_PATH}" ]]; then
   exit 1
 fi
 
+nmcli_run() {
+  nmcli --wait "${NMCLI_WAIT_SECONDS}" "$@"
+}
+
 # Apply hostname when present.
 hostname_value="$(yq -r '.hostname // ""' "${CONFIG_PATH}")"
 if [[ -n "${hostname_value}" ]]; then
@@ -63,14 +67,20 @@ connection="appcoreos-${iface}"
 # Keep config idempotent by managing a dedicated connection profile.
 if ! nmcli -t -f NAME connection show | grep -Fxq "${connection}"; then
   log "Creating NetworkManager profile: ${connection}"
-  nmcli connection add type ethernet ifname "${iface}" con-name "${connection}" autoconnect yes
+  if ! nmcli_run connection add type ethernet ifname "${iface}" con-name "${connection}" autoconnect yes; then
+    log "WARNING: failed to create NetworkManager profile ${connection}; skipping network config."
+    exit 0
+  fi
 fi
 
-nmcli connection modify "${connection}" connection.interface-name "${iface}" autoconnect yes
+if ! nmcli_run connection modify "${connection}" connection.interface-name "${iface}" autoconnect yes; then
+  log "WARNING: failed to update NetworkManager profile ${connection}; skipping network config."
+  exit 0
+fi
 
 if [[ "${network_mode}" == "dhcp" ]]; then
   log "Applying DHCP on ${iface}"
-  nmcli connection modify "${connection}" \
+  nmcli_run connection modify "${connection}" \
     ipv4.method auto \
     ipv4.addresses "" \
     ipv4.gateway "" \
@@ -87,21 +97,21 @@ else
   fi
 
   log "Applying static IPv4 on ${iface}: ${address} via ${gateway}"
-  nmcli connection modify "${connection}" \
+  nmcli_run connection modify "${connection}" \
     ipv4.method manual \
     ipv4.addresses "${address}" \
     ipv4.gateway "${gateway}" \
     ipv4.ignore-auto-dns yes
 
   if [[ -n "${dns_list}" ]]; then
-    nmcli connection modify "${connection}" ipv4.dns "${dns_list}"
+    nmcli_run connection modify "${connection}" ipv4.dns "${dns_list}"
   else
-    nmcli connection modify "${connection}" ipv4.dns ""
+    nmcli_run connection modify "${connection}" ipv4.dns ""
   fi
 fi
 
 # Bring the profile up without blocking boot for long periods.
-if nmcli --wait "${NMCLI_WAIT_SECONDS}" connection up "${connection}" >/dev/null; then
+if nmcli_run connection up "${connection}" >/dev/null; then
   log "Machine config applied successfully."
 else
   log "WARNING: Network activation timed out after ${NMCLI_WAIT_SECONDS}s; continuing boot."

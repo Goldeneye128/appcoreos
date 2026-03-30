@@ -10,4 +10,4 @@ ExecStart=/usr/lib/appcoreos/init-machine-id.sh
 RemainAfterExit=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=appcore.target

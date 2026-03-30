@@ -20,4 +20,4 @@ ExecStartPost=/usr/bin/bash -c 'for f in /etc/containers/systemd/*.container; do
 RemainAfterExit=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=appcore.target

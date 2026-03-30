@@ -71,7 +71,7 @@ for ((i=0; i<container_count; i++)); do
     done < <(yq -r ".containers[${i}].ports // [] | .[]" "${CONFIG_PATH}")
     echo
     echo "[Install]"
-    echo "WantedBy=multi-user.target"
+    echo "WantedBy=appcore.target"
   } > "${quadlet_file}"
 
   log "Creating container definition: ${name}"

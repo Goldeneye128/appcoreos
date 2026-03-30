@@ -1,5 +1,6 @@
 # AppCoreOS preset policy applied when /etc is populated on first boot.
 # Keep appliance units enabled and disable interactive/slow desktop-oriented units.
+enable appcore.target
 enable machine-config.service
 enable containers.service
 enable podman-auto-update.timer
@@ -22,3 +23,4 @@ disable getty@.service
 disable serial-getty@.service
 disable console-getty.service
 disable coreos-touch-run-agetty.service
+disable coreos-check-ssh-keys.service
