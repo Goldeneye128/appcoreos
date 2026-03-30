@@ -18,6 +18,7 @@ STATE_FILE = Path("/var/lib/appcoreos/state.json")
 LAST_UPDATE_FILE = Path("/var/lib/appcoreos/last-update")
 MACHINE_ID_FILE = Path("/var/lib/appcoreos/machine-id")
 REMOTE_CONFIG_BASE_URL_DEFAULT = "http://10.0.2.2:8081/config"
+API_AUTH_KEY_FILE = Path("/var/lib/appcoreos/api-auth.key")
 
 
 def run_command(command: List[str]) -> str:
@@ -80,6 +81,13 @@ def get_machine_id() -> str:
         return MACHINE_ID_FILE.read_text(encoding="utf-8").strip() or "unknown"
     except Exception:
         return "unknown"
+
+
+def get_api_key() -> str:
+    try:
+        return API_AUTH_KEY_FILE.read_text(encoding="utf-8").strip()
+    except Exception:
+        return "unavailable"
 
 
 def get_last_update() -> str:
@@ -187,6 +195,8 @@ def draw_dashboard(stdscr: curses.window) -> None:
         machine_id_short = machine_id[:12] if machine_id != "unknown" else machine_id
         machine_id_remote = machine_id if len(machine_id) <= 20 else f"{machine_id[:20]}..."
         remote_config_base_url = get_remote_config_base_url()
+        api_key = get_api_key()
+        api_key_display = api_key if len(api_key) <= 48 else f"{api_key[:48]}..."
         last_update = get_last_update()
         state_timestamp = get_state_timestamp()
         now = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -212,8 +222,8 @@ def draw_dashboard(stdscr: curses.window) -> None:
 
         safe_addstr(stdscr, y + 7, x, "Connection Help", curses.A_BOLD)
         safe_addstr(stdscr, y + 8, x, f"Config source     : {remote_config_base_url}/{machine_id_remote} (guest -> host)")
-        safe_addstr(stdscr, y + 9, x, "Debug API (host)  : http://127.0.0.1:9090")
-        safe_addstr(stdscr, y + 10, x, "Guest IP note     : user-net IP is NAT-only (use host 127.0.0.1:9090)")
+        safe_addstr(stdscr, y + 9, x, "Debug API (host)  : https://127.0.0.1:9090")
+        safe_addstr(stdscr, y + 10, x, f"API key           : {api_key_display}")
         safe_addstr(stdscr, y + 11, x, "Network mode      : DHCP (QEMU user networking)")
 
         table_top = y + 13

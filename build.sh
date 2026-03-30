@@ -171,7 +171,7 @@ VM controls:
 
 Access:
   API on host:   http://127.0.0.1:8081
-  debug on host: http://127.0.0.1:9090
+  debug on host: https://127.0.0.1:9090
   note: guest 192.168.122.x is NAT-internal in user-net mode
 EOF_RUN
 

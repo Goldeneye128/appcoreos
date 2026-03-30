@@ -9,6 +9,10 @@ LAST_REBOOT_TRIGGER_FILE="/var/lib/appcoreos/last-reboot-trigger"
 MACHINE_ID_FILE="/var/lib/appcoreos/machine-id"
 REMOTE_CONFIG_BASE_URL_DEFAULT="http://10.0.2.2:8081/config"
 DEBUG_SERVER_SCRIPT="/usr/lib/appcoreos/agent-debug-server.py"
+API_AUTH_KEY_FILE="/var/lib/appcoreos/api-auth.key"
+API_TLS_CERT_FILE="/var/lib/appcoreos/api-cert.pem"
+API_TLS_KEY_FILE="/var/lib/appcoreos/api-key.pem"
+API_PORT="9090"
 MAX_CONFIG_BYTES=1048576
 MIN_REBOOT_INTERVAL_SECONDS=60
 SLEEP_SECONDS=30
@@ -31,6 +35,7 @@ require_bin cmp
 require_bin mktemp
 require_bin python3
 require_bin ip
+require_bin openssl
 
 get_gateway_ip() {
   ip -4 route show default 2>/dev/null | awk '
@@ -65,7 +70,33 @@ if [[ ! -f "${DEBUG_SERVER_SCRIPT}" ]]; then
   exit 1
 fi
 
-log "starting local debug HTTP server on 127.0.0.1:9090"
+if [[ ! -s "${API_AUTH_KEY_FILE}" ]]; then
+  log "initializing API auth key"
+  umask 077
+  openssl rand -hex 16 > "${API_AUTH_KEY_FILE}"
+fi
+chmod 0600 "${API_AUTH_KEY_FILE}" || true
+api_auth_key="$(tr -d '\n' < "${API_AUTH_KEY_FILE}")"
+
+if [[ ! -s "${API_TLS_CERT_FILE}" || ! -s "${API_TLS_KEY_FILE}" ]]; then
+  log "initializing API TLS certificate"
+  rm -f "${API_TLS_CERT_FILE}" "${API_TLS_KEY_FILE}"
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout "${API_TLS_KEY_FILE}" \
+    -out "${API_TLS_CERT_FILE}" \
+    -days 3650 \
+    -subj "/CN=appcoreos-api" >/dev/null 2>&1
+fi
+chmod 0600 "${API_TLS_KEY_FILE}" || true
+chmod 0644 "${API_TLS_CERT_FILE}" || true
+
+export APPCOREOS_API_HOST="0.0.0.0"
+export APPCOREOS_API_PORT="${API_PORT}"
+export APPCOREOS_API_KEY="${api_auth_key}"
+export APPCOREOS_TLS_CERT="${API_TLS_CERT_FILE}"
+export APPCOREOS_TLS_KEY="${API_TLS_KEY_FILE}"
+
+log "starting local API server on https://127.0.0.1:${API_PORT}"
 python3 "${DEBUG_SERVER_SCRIPT}" &
 debug_server_pid="$!"
 

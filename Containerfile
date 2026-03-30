@@ -14,6 +14,7 @@ RUN dnf -y install \
       podman \
       curl \
       python3 \
+      openssl \
       NetworkManager \
       systemd \
       tmux \
