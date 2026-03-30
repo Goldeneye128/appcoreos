@@ -3,15 +3,21 @@
 
 import curses
 import datetime as dt
+import json
 import re
 import shutil
 import socket
 import subprocess
 import time
+from pathlib import Path
 from typing import List, Tuple
 
 APP_NAME = "appcoreos"
 FRAME_DELAY_SECONDS = 0.5
+STATE_FILE = Path("/var/lib/appcoreos/state.json")
+LAST_UPDATE_FILE = Path("/var/lib/appcoreos/last-update")
+MACHINE_ID_FILE = Path("/var/lib/appcoreos/machine-id")
+REMOTE_CONFIG_BASE_URL = "http://10.0.2.2:8081/config"
 
 
 def run_command(command: List[str]) -> str:
@@ -53,6 +59,37 @@ def get_primary_ip() -> str:
         return "unknown"
 
 
+def get_machine_id() -> str:
+    try:
+        return MACHINE_ID_FILE.read_text(encoding="utf-8").strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def get_last_update() -> str:
+    try:
+        if LAST_UPDATE_FILE.exists():
+            last_update_epoch = LAST_UPDATE_FILE.stat().st_mtime
+            return dt.datetime.fromtimestamp(last_update_epoch, tz=dt.timezone.utc).astimezone().strftime(
+                "%Y-%m-%d %H:%M:%S %Z"
+            )
+    except Exception:
+        pass
+    return "never"
+
+
+def get_state_timestamp() -> str:
+    try:
+        if not STATE_FILE.exists():
+            return "unknown"
+        content = STATE_FILE.read_text(encoding="utf-8")
+        data = json.loads(content)
+        value = str(data.get("timestamp", "")).strip()
+        return value or "unknown"
+    except Exception:
+        return "unknown"
+
+
 def get_containers() -> List[Tuple[str, str, str]]:
     if shutil.which("podman") is None:
         return [("podman", "unavailable", "")]
@@ -69,6 +106,22 @@ def get_containers() -> List[Tuple[str, str, str]]:
         name, image, status = [p.strip() or "unknown" for p in parts]
         containers.append((name, image, status))
     return containers
+
+
+def draw_box(stdscr: curses.window, top: int, left: int, height: int, width: int) -> None:
+    if height < 2 or width < 2:
+        return
+    safe_addstr(stdscr, top, left, "+" + "-" * (width - 2) + "+")
+    for row in range(top + 1, top + height - 1):
+        safe_addstr(stdscr, row, left, "|")
+        safe_addstr(stdscr, row, left + width - 1, "|")
+    safe_addstr(stdscr, top + height - 1, left, "+" + "-" * (width - 2) + "+")
+
+
+def add_center(stdscr: curses.window, y: int, text: str, attr: int = 0) -> None:
+    _, width = stdscr.getmaxyx()
+    x = max((width - len(text)) // 2, 0)
+    safe_addstr(stdscr, y, x, text, attr)
 
 
 def safe_addstr(stdscr: curses.window, y: int, x: int, text: str, attr: int = 0) -> None:
@@ -91,40 +144,76 @@ def draw_dashboard(stdscr: curses.window) -> None:
         curses.start_color()
         curses.use_default_colors()
         curses.init_pair(1, curses.COLOR_CYAN, -1)
+        curses.init_pair(2, curses.COLOR_GREEN, -1)
+        curses.init_pair(3, curses.COLOR_YELLOW, -1)
         title_attr = curses.A_BOLD | curses.color_pair(1)
+        ok_attr = curses.A_BOLD | curses.color_pair(2)
+        warn_attr = curses.A_BOLD | curses.color_pair(3)
     else:
         title_attr = curses.A_BOLD
+        ok_attr = curses.A_BOLD
+        warn_attr = curses.A_BOLD
 
     while True:
         stdscr.erase()
         height, width = stdscr.getmaxyx()
 
+        if height < 18 or width < 72:
+            add_center(stdscr, max(height // 2 - 1, 0), APP_NAME, title_attr)
+            add_center(stdscr, height // 2 + 1, "Terminal too small - resize to at least 72x18")
+            stdscr.refresh()
+            time.sleep(FRAME_DELAY_SECONDS)
+            continue
+
         hostname = get_hostname()
         primary_ip = get_primary_ip()
+        machine_id = get_machine_id()
+        machine_id_short = machine_id[:12] if machine_id != "unknown" else machine_id
+        last_update = get_last_update()
+        state_timestamp = get_state_timestamp()
         now = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
         containers = get_containers()
 
-        title_x = max((width - len(APP_NAME)) // 2, 0)
-        safe_addstr(stdscr, 0, title_x, APP_NAME, title_attr)
+        panel_width = min(108, width - 4)
+        panel_height = min(28, height - 2)
+        panel_left = (width - panel_width) // 2
+        panel_top = (height - panel_height) // 2
+        draw_box(stdscr, panel_top, panel_left, panel_height, panel_width)
 
-        safe_addstr(stdscr, 2, 2, f"Hostname: {hostname}")
-        safe_addstr(stdscr, 3, 2, f"Primary IP: {primary_ip}")
-        safe_addstr(stdscr, 4, 2, f"Time: {now}")
+        add_center(stdscr, panel_top + 1, APP_NAME, title_attr)
+        add_center(stdscr, panel_top + 2, "Immutable Appliance Console", warn_attr)
 
-        safe_addstr(stdscr, 6, 2, "Containers", curses.A_BOLD)
-        safe_addstr(stdscr, 7, 2, "NAME                IMAGE                                STATUS")
-        safe_addstr(stdscr, 8, 2, "----------------------------------------------------------------")
+        x = panel_left + 2
+        y = panel_top + 4
+        safe_addstr(stdscr, y, x, f"Hostname      : {hostname}")
+        safe_addstr(stdscr, y + 1, x, f"Primary IP    : {primary_ip}")
+        safe_addstr(stdscr, y + 2, x, f"Machine ID    : {machine_id_short}")
+        safe_addstr(stdscr, y + 3, x, f"Current Time  : {now}")
+        safe_addstr(stdscr, y + 4, x, f"State Updated : {state_timestamp}")
+        safe_addstr(stdscr, y + 5, x, f"Last OS Update: {last_update}")
 
-        row = 9
+        safe_addstr(stdscr, y + 7, x, "Connection Help", curses.A_BOLD)
+        safe_addstr(stdscr, y + 8, x, f"Remote config API : {REMOTE_CONFIG_BASE_URL}/{machine_id}")
+        safe_addstr(stdscr, y + 9, x, "Local debug API   : http://127.0.0.1:9090")
+        safe_addstr(stdscr, y + 10, x, "QEMU host access  : forward host tcp/9090 -> guest tcp/9090")
+        safe_addstr(stdscr, y + 11, x, "Network mode      : DHCP (QEMU user networking)")
+
+        table_top = y + 13
+        safe_addstr(stdscr, table_top, x, "Containers", curses.A_BOLD)
+        safe_addstr(stdscr, table_top + 1, x, "NAME                IMAGE                                  STATUS")
+        safe_addstr(stdscr, table_top + 2, x, "-" * min(panel_width - 4, 80))
+
+        row = table_top + 3
         if containers:
             for name, image, status in containers:
-                if row >= height - 1:
+                if row >= panel_top + panel_height - 2:
                     break
-                line = f"{name:<18} {image:<36} {status}"
-                safe_addstr(stdscr, row, 2, line)
+                line = f"{name:<18} {image:<38} {status}"
+                attr = ok_attr if "up" in status.lower() or "running" in status.lower() else 0
+                safe_addstr(stdscr, row, x, line, attr)
                 row += 1
         else:
-            safe_addstr(stdscr, row, 2, "No running containers")
+            safe_addstr(stdscr, row, x, "No running containers")
 
         stdscr.refresh()
 

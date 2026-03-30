@@ -12,6 +12,12 @@ fi
 echo "[runvm] starting VM..."
 echo "[runvm] image: ${IMAGE}"
 echo "[runvm] mode: software emulation (tcg)"
+echo "[runvm] guest networking: DHCP via QEMU user-net"
+echo "[runvm] debug API (host): http://127.0.0.1:9090"
+echo "[runvm] test: curl http://127.0.0.1:9090/state"
+echo "[runvm] test: curl http://127.0.0.1:9090/containers"
+echo "[runvm] test: curl http://127.0.0.1:9090/containers/<name>/logs?tail=200"
+echo "[runvm] test: curl -X POST http://127.0.0.1:9090/containers/<name>/restart"
 
 exec qemu-system-x86_64 \
   -machine accel=tcg \
@@ -20,5 +26,5 @@ exec qemu-system-x86_64 \
   -drive file="${IMAGE}",format=qcow2 \
   -nographic \
   -serial mon:stdio \
-  -netdev user,id=net0 \
+  -netdev user,id=net0,hostfwd=tcp::9090-:9090 \
   -device e1000,netdev=net0

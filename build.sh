@@ -176,7 +176,7 @@ EOF_RUN
     -m 2048 \
     -smp 2 \
     -drive file="${QCOW2_IMAGE}",format=qcow2,if=virtio \
-    -netdev user,id=net0,hostfwd=tcp::8081-:8081,hostfwd=tcp::9090-:9090 \
+    -netdev user,id=net0,hostfwd=tcp::9090-:9090 \
     -device virtio-net-pci,netdev=net0 \
     -nographic
 }
