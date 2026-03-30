@@ -120,7 +120,11 @@ collect_qcow2_artifact() {
 
 build_local() {
   require_cmd podman
-  build_image_host
+  if [[ "${OS}" == "Darwin" ]]; then
+    build_image_macos_machine
+  else
+    build_image_host
+  fi
   log "local image build complete"
   cat <<EOF_RUN
 

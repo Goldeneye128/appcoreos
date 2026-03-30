@@ -21,3 +21,4 @@ disable getty.target
 disable getty@.service
 disable serial-getty@.service
 disable console-getty.service
+disable coreos-touch-run-agetty.service

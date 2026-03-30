@@ -66,6 +66,7 @@ RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/boo
     && (systemctl mask getty@.service || true) \
     && (systemctl mask serial-getty@.service || true) \
     && (systemctl mask console-getty.service || true) \
+    && (systemctl mask coreos-touch-run-agetty.service || true) \
     && (systemctl mask getty@tty1.service || true) \
     && (systemctl mask serial-getty@ttyS0.service || true) \
     && mkdir -p /var/lib/appcoreos \
