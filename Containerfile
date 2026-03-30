@@ -1,20 +1,35 @@
-# Minimal immutable appliance image built in Universal Blue style.
-FROM ghcr.io/ublue-os/ucore:stable
+# Minimal immutable appliance image inspired by Universal Blue workflows,
+# based directly on Fedora CoreOS.
+FROM quay.io/fedora/fedora-coreos:stable
 
 # Install only the packages required for this bootstrap phase.
-# - podman: container runtime (used later via Quadlet)
+# - podman: container runtime (Quadlet)
 # - yq: parse machine-config YAML
-# - curl: remote config + API fetches
-# - python3: local debug HTTP server for agent
-# - NetworkManager: single networking stack (nmcli for DHCP/static)
-# - systemd: service orchestration
+# - curl/python3: agent + debug server
+# - NetworkManager: single networking stack
+# - tmux/podman-compose/firewalld: useful VM host tools
+# - guest agents: qemu/open-vm/hyper-v support
 RUN dnf -y install \
+      bootc \
       podman \
       curl \
       python3 \
       NetworkManager \
       systemd \
-    && (dnf -y remove openssh-server openssh-clients || true) \
+      tmux \
+      podman-compose \
+      firewalld \
+      qemu-guest-agent \
+      open-vm-tools \
+      hyperv-daemons \
+    && (dnf -y remove \
+      openssh-server \
+      openssh-clients \
+      'cockpit*' \
+      'docker*' \
+      moby-engine \
+      tailscale \
+      wireguard-tools || true) \
     && curl -fL --retry 3 --retry-delay 2 \
       "https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64" \
       -o /usr/bin/yq \
@@ -23,21 +38,20 @@ RUN dnf -y install \
     && rm -rf /var/cache/dnf
 
 # Copy our appliance filesystem overlay into the image.
-COPY rootfs/ /
+COPY system_files/ /
 
 # Make systemd container-aware when running as an OCI container for testing.
 ENV container=oci
 
 # Ensure scripts are executable, ensure runtime path exists,
 # and enable early-boot machine-config processing.
-RUN chmod 0755 /usr/lib/your-os/apply-machine-config.sh /usr/lib/your-os/bootstrap-machine-config.sh \
-    && chmod 0755 /usr/lib/your-os/generate-containers.sh \
-    && chmod 0755 /usr/lib/your-os/generate-state.sh \
-    && chmod 0755 /usr/lib/your-os/update-os.sh \
-    && chmod 0755 /usr/lib/your-os/init-machine-id.sh \
-    && chmod 0755 /usr/lib/your-os/agent.sh \
-    && chmod 0755 /usr/lib/your-os/agent-debug-server.py \
-    && chmod 0755 /usr/lib/your-os/tui.sh \
+RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/bootstrap-machine-config.sh \
+    && chmod 0755 /usr/lib/appcoreos/generate-containers.sh \
+    && chmod 0755 /usr/lib/appcoreos/generate-state.sh \
+    && chmod 0755 /usr/lib/appcoreos/init-machine-id.sh \
+    && chmod 0755 /usr/lib/appcoreos/agent.sh \
+    && chmod 0755 /usr/lib/appcoreos/agent-debug-server.py \
+    && chmod 0755 /usr/lib/appcoreos/tui.sh \
     && rm -f /usr/lib/systemd/system-generators/systemd-getty-generator || true \
     && rm -f /usr/lib/systemd/system-generators/systemd-ssh-generator || true \
     && rm -f /usr/lib/systemd/system/sshd* || true \
@@ -46,26 +60,19 @@ RUN chmod 0755 /usr/lib/your-os/apply-machine-config.sh /usr/lib/your-os/bootstr
     && (systemctl mask sshd.socket || true) \
     && (systemctl mask sshd-vsock.socket || true) \
     && (systemctl mask ssh-access.target || true) \
-    && (systemctl disable firewalld.service || true) \
-    && (systemctl mask firewalld.service || true) \
-    && rm -f /usr/lib/systemd/system/getty@.service || true \
-    && rm -f /usr/lib/systemd/system/serial-getty@.service || true \
-    && rm -f /usr/lib/systemd/system/console-getty.service || true \
+    && (systemctl disable zincati.service zincati.timer || true) \
+    && (systemctl mask zincati.service zincati.timer || true) \
     && (systemctl mask getty.target || true) \
     && (systemctl mask getty@.service || true) \
     && (systemctl mask serial-getty@.service || true) \
     && (systemctl mask console-getty.service || true) \
     && (systemctl mask getty@tty1.service || true) \
     && (systemctl mask serial-getty@ttyS0.service || true) \
-    && (chmod 000 /sbin/agetty || true) \
-    && mkdir -p /var/lib/your-os \
+    && mkdir -p /var/lib/appcoreos \
     && mkdir -p /etc/containers/systemd \
     && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release \
     && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release \
     && (systemctl preset-all || true) \
-    && (systemctl disable update-os.service update-os.timer || true) \
-    && rm -f /etc/systemd/system/update-os.service /etc/systemd/system/update-os.timer \
-    && (systemctl mask update-os.service update-os.timer || true) \
     && (systemctl enable bootc-fetch-apply-updates.timer || true) \
     && systemctl enable machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service agent.service tui.service
 

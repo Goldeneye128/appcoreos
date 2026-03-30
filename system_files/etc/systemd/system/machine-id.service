@@ -1,0 +1,13 @@
+# Ensure local appliance machine identity exists before agent starts.
+[Unit]
+Description=Initialize appliance machine identity
+Documentation=man:systemd.service(5)
+Before=agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/appcoreos/init-machine-id.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

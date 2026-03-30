@@ -1,84 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_TAG="appcoreos:latest"
-BUILDER_IMAGE_TAG="appcoreos-builder:latest"
+IMAGE_REF="localhost/appcoreos:latest"
 IMAGE_ARCH="amd64"
-BIB_TARGET_ARCH="x86_64"
+TARGET_ARCH="x86_64"
 BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest"
-BUILD_DIR="build"
-LOG_DIR="build/logs"
-LOG_FILE="${LOG_FILE:-}"
-BASE_QCOW2_IMAGE="${BUILD_DIR}/fedora-cloud-base.qcow2"
-QCOW2_IMAGE="${BUILD_DIR}/appcoreos.qcow2"
-QCOW2_IMAGE_TMP="${BUILD_DIR}/appcoreos.tmp.qcow2"
-OS="$(uname -s)"
-FEDORA_VERSION="43"
-FEDORA_IMAGE_VERSION="1.6"
-FEDORA_MIRROR="https://ftp.uni-stuttgart.de/fedora"
-FEDORA_CLOUD_IMAGE_URL="${FEDORA_MIRROR}/releases/${FEDORA_VERSION}/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-${FEDORA_VERSION}-${FEDORA_IMAGE_VERSION}.x86_64.qcow2"
 
+BUILD_DIR="build"
+LOG_DIR="${BUILD_DIR}/logs"
+OUTPUT_DIR="${BUILD_DIR}/output"
+TMP_DIR="${BUILD_DIR}/tmp"
+QCOW2_IMAGE="${BUILD_DIR}/appcoreos.qcow2"
+
+OS="$(uname -s)"
 TARGET=""
-IN_CONTAINER=0
-REBUILD_BUILDER=0
 CLEAN_BUILD=0
+LOG_FILE=""
 
 log() {
   echo "$(date -Iseconds) [build] $*"
 }
 
-for arg in "$@"; do
-  if [[ "${arg}" == "-d" ]]; then
-    CLEAN_BUILD=1
-    break
-  fi
-done
-
-if [[ "${CLEAN_BUILD}" == "1" ]]; then
-  build_dir_realpath=""
-  echo "[build] deleting build directory"
-  if [[ -d "${BUILD_DIR}" ]]; then
-    build_dir_realpath="$(realpath "${BUILD_DIR}" 2>/dev/null || true)"
-    if [[ -n "${build_dir_realpath}" ]] && [[ "${build_dir_realpath}" != "/" ]]; then
-      rm -rf "${BUILD_DIR}/"
-    fi
-  fi
-  mkdir -p "${LOG_DIR}"
-fi
-
-if [[ -f /.dockerenv ]]; then
-  IN_CONTAINER=1
-elif grep -qa 'container' /proc/1/environ 2>/dev/null; then
-  IN_CONTAINER=1
-fi
-
-if [[ "${IN_CONTAINER}" == "0" ]]; then
-  mkdir -p "${LOG_DIR}"
-  if [[ -z "${LOG_FILE}" ]]; then
-    LOG_FILE="${LOG_DIR}/build-$(date +%Y%m%d-%H%M%S).log"
-  fi
-  exec > >(tee -a "${LOG_FILE}") 2>&1
-fi
-
-log "build started"
-if [[ "${IN_CONTAINER}" == "1" ]]; then
-  log "running inside builder container"
-fi
-if [[ "${IN_CONTAINER}" == "0" ]] && [[ -n "${LOG_FILE}" ]]; then
-  log "log file: ${LOG_FILE}"
-fi
-
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage:
   ./build.sh --target local
   ./build.sh --target proxmox
-  ./build.sh --target proxmox-internal
   ./build.sh --target mac
+
 Optional flags:
-  --rebuild-builder
   -d              delete build/ before starting
-EOF
+  -h, --help      show this help text
+USAGE
 }
 
 require_cmd() {
@@ -88,166 +41,122 @@ require_cmd() {
   }
 }
 
-build_image() {
-  log "using Universal Blue ucore:stable for appcoreos base image"
-  log "building architecture: ${IMAGE_ARCH}"
-  log "building image: ${IMAGE_TAG}"
-  podman build --arch "${IMAGE_ARCH}" --pull=newer -t "${IMAGE_TAG}" .
+prepare_logging() {
+  mkdir -p "${LOG_DIR}"
+  LOG_FILE="${LOG_DIR}/build-$(date +%Y%m%d-%H%M%S).log"
+  exec > >(tee -a "${LOG_FILE}") 2>&1
+  log "build started"
+  log "log file: ${LOG_FILE}"
+}
+
+safe_clean_build_dir() {
+  local build_realpath=""
+  echo "[build] deleting build directory"
+  if [[ -d "${BUILD_DIR}" ]]; then
+    build_realpath="$(realpath "${BUILD_DIR}" 2>/dev/null || true)"
+    if [[ -n "${build_realpath}" && "${build_realpath}" != "/" ]]; then
+      rm -rf "${BUILD_DIR}/"
+    fi
+  fi
+}
+
+prepare_dirs() {
+  mkdir -p "${OUTPUT_DIR}" "${TMP_DIR}" "${LOG_DIR}"
+}
+
+build_image_host() {
+  log "using Fedora CoreOS base image"
+  log "building image: ${IMAGE_REF} (${IMAGE_ARCH})"
+  podman build --arch "${IMAGE_ARCH}" --pull=newer -t "${IMAGE_REF}" .
+}
+
+build_image_macos_machine() {
+  local repo_path
+  repo_path="$(pwd)"
+
+  log "ensuring podman machine is running"
+  podman machine start >/dev/null 2>&1 || true
+
+  log "building image in podman machine (rootful)"
+  podman machine ssh "cd '${repo_path}' && sudo podman build --arch '${IMAGE_ARCH}' --pull=newer -t '${IMAGE_REF}' ."
+}
+
+run_bib_local() {
+  local repo_path
+  repo_path="$(pwd)"
+
+  prepare_dirs
+  log "building qcow2 with bootc-image-builder"
+  podman run --rm --privileged --pull=newer \
+    --security-opt label=type:unconfined_t \
+    -v "${repo_path}/${OUTPUT_DIR}:/output" \
+    -v "${repo_path}/${TMP_DIR}:/var/tmp" \
+    -v /var/lib/containers/storage:/var/lib/containers/storage \
+    "${BIB_IMAGE}" \
+    --type qcow2 --target-arch "${TARGET_ARCH}" --rootfs=xfs "${IMAGE_REF}"
+}
+
+run_bib_macos_machine() {
+  local repo_path
+  repo_path="$(pwd)"
+
+  prepare_dirs
+  log "building qcow2 with bootc-image-builder in podman machine"
+  podman machine ssh "cd '${repo_path}' && rm -rf '${OUTPUT_DIR}' '${TMP_DIR}' && mkdir -p '${OUTPUT_DIR}' '${TMP_DIR}' && sudo podman run --rm --privileged --pull=newer --security-opt label=type:unconfined_t -v '${repo_path}/${OUTPUT_DIR}:/output' -v '${repo_path}/${TMP_DIR}:/var/tmp' -v /var/lib/containers/storage:/var/lib/containers/storage '${BIB_IMAGE}' --type qcow2 --target-arch '${TARGET_ARCH}' --rootfs=xfs '${IMAGE_REF}'"
+}
+
+collect_qcow2_artifact() {
+  local produced_qcow2
+  produced_qcow2="${OUTPUT_DIR}/qcow2/disk.qcow2"
+
+  if [[ ! -f "${produced_qcow2}" ]]; then
+    echo "bootc-image-builder did not produce expected file: ${produced_qcow2}" >&2
+    exit 1
+  fi
+
+  cp -f "${produced_qcow2}" "${QCOW2_IMAGE}"
+  log "proxmox artifact ready: ${QCOW2_IMAGE}"
 }
 
 build_local() {
   require_cmd podman
-  build_image
-  log "local build complete"
-  cat <<EOF
+  build_image_host
+  log "local image build complete"
+  cat <<EOF_RUN
 
 Run instructions:
   podman run --rm -it --privileged \\
     --cgroupns=host \\
     -v /sys/fs/cgroup:/sys/fs/cgroup:rw \\
     --name appcoreos-local \\
-    ${IMAGE_TAG}
-EOF
-}
-
-build_proxmox_internal() {
-  ARCH="$(uname -m)"
-
-  require_cmd qemu-img
-  require_cmd curl
-  require_cmd virt-copy-in
-  require_cmd virt-filesystems
-
-  export LIBGUESTFS_BACKEND=direct
-  export LIBGUESTFS_DEBUG=1
-  export LIBGUESTFS_TRACE=1
-  if [[ "${ARCH}" == "aarch64" ]]; then
-    export LIBGUESTFS_ARCH=x86_64
-    log "forcing libguestfs architecture: x86_64"
-  fi
-  log "using libguestfs direct backend (no libvirt)"
-
-  mkdir -p "${BUILD_DIR}"
-  rm -f "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
-
-  log "using Fedora version ${FEDORA_VERSION}"
-  log "using image version ${FEDORA_IMAGE_VERSION}"
-  log "using mirror ${FEDORA_MIRROR}"
-  log "downloading from ${FEDORA_CLOUD_IMAGE_URL}"
-  if ! curl -fL --retry 3 --retry-delay 2 "${FEDORA_CLOUD_IMAGE_URL}" -o "${BASE_QCOW2_IMAGE}"; then
-    echo "Failed to download Fedora ${FEDORA_VERSION} cloud image" >&2
-    exit 1
-  fi
-
-  log "preparing working qcow2 image: ${QCOW2_IMAGE}"
-  cp "${BASE_QCOW2_IMAGE}" "${QCOW2_IMAGE}"
-
-  log "debugging image layout"
-  virt-filesystems -a "${QCOW2_IMAGE}" --all --long || true
-
-  log "copying appliance rootfs overlay into image"
-  mapfile -t overlay_entries < <(find rootfs -mindepth 1 -maxdepth 1 -print)
-  if [[ "${#overlay_entries[@]}" -gt 0 ]]; then
-    virt-copy-in -a "${QCOW2_IMAGE}" "${overlay_entries[@]}" /
-  fi
-
-  log "skipping in-guest command customization for cross-arch compatibility"
-  log "systemd hardening and boot target are applied via rootfs overlay"
-
-  log "repacking qcow2 image"
-  qemu-img convert -f qcow2 -O qcow2 "${QCOW2_IMAGE}" "${QCOW2_IMAGE_TMP}"
-  mv -f "${QCOW2_IMAGE_TMP}" "${QCOW2_IMAGE}"
-
-  log "proxmox artifact ready: ${QCOW2_IMAGE}"
-}
-
-build_proxmox_bootc_macos() {
-  local repo_path bib_source_image output_qcow2
-
-  repo_path="$(pwd)"
-  bib_source_image="localhost/${IMAGE_TAG}"
-  output_qcow2="${repo_path}/${BUILD_DIR}/output/qcow2/disk.qcow2"
-
-  log "ensuring podman machine is running"
-  podman machine start >/dev/null 2>&1 || true
-
-  log "using Universal Blue/bootc image build flow for macOS"
-
-  log "building x86_64 image in podman machine (rootful)"
-  podman machine ssh "cd '${repo_path}' && sudo podman build --arch '${IMAGE_ARCH}' --pull=newer -t '${bib_source_image}' ."
-
-  log "building qcow2 via bootc-image-builder"
-  podman machine ssh "cd '${repo_path}' && rm -rf '${BUILD_DIR}/output' '${BUILD_DIR}/tmp' && mkdir -p '${BUILD_DIR}/output' '${BUILD_DIR}/tmp' && sudo podman run --rm --privileged --pull=newer --security-opt label=type:unconfined_t -v '${repo_path}/${BUILD_DIR}/output:/output' -v '${repo_path}/${BUILD_DIR}/tmp:/var/tmp' -v /var/lib/containers/storage:/var/lib/containers/storage '${BIB_IMAGE}' --type qcow2 --target-arch '${BIB_TARGET_ARCH}' --rootfs=xfs '${bib_source_image}'"
-
-  if [[ ! -f "${output_qcow2}" ]]; then
-    echo "bootc-image-builder did not produce expected output: ${output_qcow2}" >&2
-    exit 1
-  fi
-
-  mkdir -p "${BUILD_DIR}"
-  cp -f "${output_qcow2}" "${QCOW2_IMAGE}"
-  log "proxmox artifact ready: ${QCOW2_IMAGE}"
-}
-
-build_builder_image() {
-  log "using Fedora 43 for builder image"
-  log "building builder image"
-  podman build -t "${BUILDER_IMAGE_TAG}" -f - . <<'EOF'
-FROM quay.io/fedora/fedora:43
-
-RUN dnf -y install \
-      bash \
-      coreutils \
-      curl \
-      dnf \
-      e2fsprogs \
-      libguestfs-tools-c \
-      qemu-img \
-      tar \
-      util-linux \
-    && dnf clean all \
-    && rm -rf /var/cache/dnf
-EOF
-  log "builder image ready"
-}
-
-ensure_builder_image() {
-  if [[ "${REBUILD_BUILDER}" == "1" ]]; then
-    build_builder_image
-    return
-  fi
-
-  if podman image exists "${BUILDER_IMAGE_TAG}"; then
-    log "reusing cached builder image"
-    log "builder image ready"
-    return
-  fi
-
-  build_builder_image
+    ${IMAGE_REF}
+EOF_RUN
 }
 
 build_proxmox() {
   require_cmd podman
 
   if [[ "${OS}" == "Darwin" ]]; then
-    build_proxmox_bootc_macos
-    return
+    build_image_macos_machine
+    run_bib_macos_machine
+  else
+    build_image_host
+    run_bib_local
   fi
 
-  build_image
-  build_proxmox_internal
+  collect_qcow2_artifact
 }
 
 build_mac() {
   require_cmd qemu-system-x86_64
 
   if [[ ! -f "${QCOW2_IMAGE}" ]]; then
-    log "qcow2 image not found at ${QCOW2_IMAGE}; running proxmox build first"
+    log "qcow2 image missing; running proxmox build first"
     build_proxmox
   fi
 
   log "starting VM with qcow2 image: ${QCOW2_IMAGE}"
-  cat <<EOF
+  cat <<EOF_RUN
 
 VM controls:
   stop VM: Ctrl+A then X
@@ -255,7 +164,7 @@ VM controls:
 Access:
   API on host:   http://127.0.0.1:8081
   debug on host: http://127.0.0.1:9090
-EOF
+EOF_RUN
 
   qemu-system-x86_64 \
     -machine accel=tcg \
@@ -273,10 +182,6 @@ while [[ $# -gt 0 ]]; do
     --target)
       TARGET="${2:-}"
       shift 2
-      ;;
-    --rebuild-builder)
-      REBUILD_BUILDER=1
-      shift
       ;;
     -d)
       CLEAN_BUILD=1
@@ -299,15 +204,19 @@ if [[ -z "${TARGET}" ]]; then
   exit 1
 fi
 
+if [[ "${CLEAN_BUILD}" == "1" ]]; then
+  safe_clean_build_dir
+fi
+
+prepare_logging
+prepare_dirs
+
 case "${TARGET}" in
   local)
     build_local
     ;;
   proxmox)
     build_proxmox
-    ;;
-  proxmox-internal)
-    build_proxmox_internal
     ;;
   mac)
     build_mac

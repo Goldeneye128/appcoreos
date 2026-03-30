@@ -1,0 +1,22 @@
+# Early-boot machine configuration bootstrap.
+[Unit]
+Description=Load and apply machine-config
+Documentation=man:systemd.service(5)
+# Run early, but only after local filesystems and NetworkManager are available.
+DefaultDependencies=no
+After=local-fs.target NetworkManager.service
+Wants=NetworkManager.service
+# CHANGED: Ensure this runs before network is considered started.
+Wants=network-pre.target
+Before=network-pre.target network.target network-online.target multi-user.target
+ConditionPathIsReadWrite=/var
+
+[Service]
+Type=oneshot
+# Internal bootstrap logic picks config source and then applies it.
+ExecStart=/usr/lib/appcoreos/bootstrap-machine-config.sh
+RemainAfterExit=yes
+
+[Install]
+# Start in sysinit so networking can be configured before normal services.
+WantedBy=sysinit.target

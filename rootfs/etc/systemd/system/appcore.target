@@ -1,7 +1,0 @@
-[Unit]
-Description=AppCoreOS Target
-Requires=tui.service
-After=basic.target
-
-[Install]
-Alias=default.target

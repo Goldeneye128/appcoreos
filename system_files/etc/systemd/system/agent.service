@@ -1,0 +1,16 @@
+# Local agent that reads state.json and handles remote config updates.
+[Unit]
+Description=AppCoreOS local agent
+Documentation=man:systemd.service(5)
+After=state.service
+After=machine-id.service
+Wants=state.service machine-id.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/appcoreos/agent.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

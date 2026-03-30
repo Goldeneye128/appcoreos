@@ -1,0 +1,23 @@
+# Generate and start container units from machine config.
+[Unit]
+Description=Generate Quadlet containers and start them
+Documentation=man:systemd.service(5)
+# Require machine config to be persisted and applied first.
+After=machine-config.service NetworkManager.service
+Requires=machine-config.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+# Stop any currently defined Quadlet services before full regeneration.
+ExecStartPre=/usr/bin/bash -c 'for f in /etc/containers/systemd/*.container; do [ -e "$f" ] || exit 0; n="$(basename "$f" .container)"; systemctl stop "$n.service" >/dev/null 2>&1 || true; done'
+# 1) Generate *.container files from config.
+ExecStart=/usr/lib/appcoreos/generate-containers.sh
+# 2) Reload systemd so generated Quadlet units are recognized.
+ExecStartPost=/usr/bin/systemctl daemon-reload
+# 3) Restart all generated container services to apply regenerated files.
+ExecStartPost=/usr/bin/bash -c 'for f in /etc/containers/systemd/*.container; do [ -e "$f" ] || exit 0; n="$(basename "$f" .container)"; systemctl restart "$n.service"; done'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

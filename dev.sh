@@ -2,10 +2,9 @@
 set -euo pipefail
 
 echo "[dev] cleaning..."
-rm -rf build/
 
 echo "[dev] building..."
-./build.sh --target proxmox
+./build.sh --target proxmox -d
 
 # Stop any existing AppCoreOS QEMU instance; ignore failures.
 if command -v pkill >/dev/null 2>&1; then
