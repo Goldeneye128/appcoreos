@@ -17,6 +17,20 @@ Build from source:
 go build -o bin/appcorectl ./cmd/appcorectl
 ```
 
+Build via helper script (auto-falls back to containerized Go 1.26 if local Go is too old):
+
+```bash
+./scripts/build.sh
+```
+
+Build and install:
+
+```bash
+./scripts/build_install.sh
+# or system-wide
+./scripts/build_install.sh --system
+```
+
 Install to your Go bin path:
 
 ```bash
