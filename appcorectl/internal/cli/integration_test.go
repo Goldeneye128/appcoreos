@@ -74,7 +74,7 @@ func TestBootstrapStatusAndClaimIntegration(t *testing.T) {
 	if err := os.WriteFile(caFile, []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"), 0o600); err != nil {
 		t.Fatalf("write client CA file: %v", err)
 	}
-	if _, _, err := executeWithOutput(t, "--config", cfgPath, "bootstrap", "claim", "--token", "abc123", "--client-ca-file", caFile); err != nil {
+	if _, _, err := executeWithOutput(t, "--config", cfgPath, "bootstrap", "claim", "--token", "abc123", "--client-ca-file", caFile, "--wait=false"); err != nil {
 		t.Fatalf("bootstrap claim failed: %v", err)
 	}
 	if !claimCalled {
@@ -106,7 +106,7 @@ func TestBootstrapClaimAutoGeneratesClientPKI(t *testing.T) {
 		t.Fatalf("target add failed: %v", err)
 	}
 
-	if _, _, err := executeWithOutput(t, "--config", cfgPath, "bootstrap", "claim", "--token", "abc123"); err != nil {
+	if _, _, err := executeWithOutput(t, "--config", cfgPath, "bootstrap", "claim", "--token", "abc123", "--wait=false"); err != nil {
 		t.Fatalf("bootstrap claim with generated PKI failed: %v", err)
 	}
 	if !strings.Contains(claimBody, "BEGIN CERTIFICATE") {

@@ -95,6 +95,9 @@ func (a *app) newBootstrapClaimCommand() *cobra.Command {
 						return err
 					}
 				}
+				// Keep runtime target in sync so post-claim readiness checks use mTLS immediately.
+				r.target.CertPath = profile.CertPath
+				r.target.KeyPath = profile.KeyPath
 			}
 			c, err := r.newClient()
 			if err != nil {
