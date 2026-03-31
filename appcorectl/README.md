@@ -81,6 +81,19 @@ Or let `appcorectl` generate local client PKI automatically:
 appcorectl bootstrap claim --token <bootstrap-token>
 ```
 
+By default, `bootstrap claim` waits for post-claim API readiness. You can tune or disable this:
+
+```bash
+appcorectl bootstrap claim --token <bootstrap-token> --wait-timeout 180 --wait-interval 3
+appcorectl bootstrap claim --token <bootstrap-token> --wait=false
+```
+
+You can also wait explicitly:
+
+```bash
+appcorectl bootstrap wait --timeout 120 --interval 3
+```
+
 Generated files are stored under:
 - `~/.local/share/appcorectl/pki/<target>/`
 
@@ -143,6 +156,7 @@ appcorectl info --output json
 - `--insecure` is available for local development only and emits a warning.
 - mTLS is supported through `--ca`, `--cert`, `--key` and target profile values.
 - `bootstrap claim` auto-generates local client CA/cert/key if `--client-ca-file` is omitted.
+- `bootstrap claim` waits for readiness by default; use `--wait=false` to skip.
 - API key can be provided via profile, `APPCORECTL_API_KEY`, or `--api-key`.
 - Secret values are redacted in profile listing output.
 
