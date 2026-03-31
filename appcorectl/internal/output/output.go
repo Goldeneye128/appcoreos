@@ -38,6 +38,16 @@ func printTable(w io.Writer, data any) error {
 	case []any:
 		return printSliceTable(w, v)
 	case map[string]any:
+		if len(v) == 1 {
+			for _, nested := range v {
+				switch t := nested.(type) {
+				case []any:
+					return printSliceTable(w, t)
+				case map[string]any:
+					return printMapTable(w, t)
+				}
+			}
+		}
 		return printMapTable(w, v)
 	default:
 		_, err := fmt.Fprintln(w, v)
@@ -66,7 +76,7 @@ func printMapTable(w io.Writer, data map[string]any) error {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		_, _ = fmt.Fprintf(tw, "%s\t%v\n", key, data[key])
+		_, _ = fmt.Fprintf(tw, "%s\t%s\n", key, formatValue(data[key]))
 	}
 	return tw.Flush()
 }
@@ -102,9 +112,22 @@ func printSliceTable(w io.Writer, rows []any) error {
 	for _, row := range objects {
 		vals := make([]string, 0, len(headerList))
 		for _, key := range headerList {
-			vals = append(vals, fmt.Sprintf("%v", row[key]))
+			vals = append(vals, formatValue(row[key]))
 		}
 		_, _ = fmt.Fprintln(tw, strings.Join(vals, "\t"))
 	}
 	return tw.Flush()
+}
+
+func formatValue(v any) string {
+	switch typed := v.(type) {
+	case nil:
+		return ""
+	case map[string]any, []any:
+		bytes, err := json.Marshal(typed)
+		if err == nil {
+			return string(bytes)
+		}
+	}
+	return fmt.Sprintf("%v", v)
 }

@@ -122,6 +122,24 @@ def get_state_timestamp() -> str:
 
 
 def get_containers() -> List[Tuple[str, str, str]]:
+    # Prefer the periodically generated state file to avoid frequent podman calls.
+    try:
+        if STATE_FILE.exists():
+            data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            containers = data.get("containers")
+            if isinstance(containers, list):
+                parsed: List[Tuple[str, str, str]] = []
+                for item in containers:
+                    if not isinstance(item, dict):
+                        continue
+                    name = str(item.get("name", "unknown")).strip() or "unknown"
+                    image = str(item.get("image", "-")).strip() or "-"
+                    status = str(item.get("status", "unknown")).strip() or "unknown"
+                    parsed.append((name, image, status))
+                return parsed
+    except Exception:
+        pass
+
     if shutil.which("podman") is None:
         return [("podman", "unavailable", "")]
 

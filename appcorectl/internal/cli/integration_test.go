@@ -131,6 +131,34 @@ func TestBootstrapClaimAutoGeneratesClientPKI(t *testing.T) {
 	}
 }
 
+func TestLogsJournalPlainTextIntegration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfgPath := filepath.Join(home, ".config", "appcorectl", "config.yaml")
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/logs/journal" {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = w.Write([]byte("line one\nline two\n"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	if _, _, err := executeWithOutput(t, "--config", cfgPath, "target", "add", "lab", "--url", server.URL, "--insecure"); err != nil {
+		t.Fatalf("target add failed: %v", err)
+	}
+
+	stdout, _, err := executeWithOutput(t, "--config", cfgPath, "logs", "journal", "--tail", "10")
+	if err != nil {
+		t.Fatalf("logs journal failed: %v", err)
+	}
+	if !strings.Contains(stdout, "line one") || !strings.Contains(stdout, "line two") {
+		t.Fatalf("unexpected logs output: %s", stdout)
+	}
+}
+
 func TestTargetRemoveWithAndWithoutPKIPurge(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

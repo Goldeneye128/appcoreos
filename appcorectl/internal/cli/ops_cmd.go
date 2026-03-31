@@ -31,7 +31,7 @@ func (a *app) newStateCommand() *cobra.Command {
 }
 
 func (a *app) newServicesCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "services", Short: "Manage services"}
+	cmd := &cobra.Command{Use: "services", Aliases: []string{"service"}, Short: "Manage services"}
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "list",
@@ -89,7 +89,7 @@ func (a *app) newServiceRestartCommand() *cobra.Command {
 }
 
 func (a *app) newContainersCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "containers", Short: "Manage containers"}
+	cmd := &cobra.Command{Use: "containers", Aliases: []string{"container"}, Short: "Manage containers"}
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "list",
@@ -120,7 +120,7 @@ func (a *app) newContainerLogsCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := url.Values{"tail": []string{strconv.Itoa(tail)}}
 			name := url.PathEscape(strings.TrimSpace(args[0]))
-			return a.runReadCommand(cmd, "/v1/containers/"+name+"/logs", query)
+			return a.runReadTextCommand(cmd, "/v1/containers/"+name+"/logs", query)
 		},
 	}
 	cmd.Flags().IntVar(&tail, "tail", 200, "Tail line count")
@@ -145,7 +145,7 @@ func (a *app) newLogsCommand() *cobra.Command {
 			if strings.TrimSpace(unit) != "" {
 				query.Set("unit", strings.TrimSpace(unit))
 			}
-			return a.runReadCommand(cmd, "/v1/logs/journal", query)
+			return a.runReadTextCommand(cmd, "/v1/logs/journal", query)
 		},
 	}
 	journal.Flags().IntVar(&tail, "tail", 200, "Tail line count")
@@ -245,4 +245,26 @@ func (a *app) runReadCommand(cmd *cobra.Command, path string, query url.Values) 
 		return err
 	}
 	return printRead(cmd, r.output, payload)
+}
+
+func (a *app) runReadTextCommand(cmd *cobra.Command, path string, query url.Values) error {
+	r, err := a.buildRuntime(true)
+	if err != nil {
+		return err
+	}
+	c, err := r.newClient()
+	if err != nil {
+		return err
+	}
+	payload, err := c.GetText(context.Background(), path, query, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), payload); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(payload, "\n") {
+		_, _ = fmt.Fprintln(cmd.OutOrStdout())
+	}
+	return nil
 }

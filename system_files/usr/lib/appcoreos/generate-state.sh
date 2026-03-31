@@ -28,7 +28,13 @@ require_bin python3
 
 mkdir -p "${STATE_DIR}"
 
-hostname_value="$(hostnamectl --static 2>/dev/null || hostname)"
+hostname_value="$(hostnamectl --static 2>/dev/null || true)"
+hostname_value="$(echo -n "${hostname_value}" | tr -d '\r\n' | xargs || true)"
+if [[ -z "${hostname_value}" ]]; then
+  hostname_value="$(hostname 2>/dev/null || true)"
+  hostname_value="$(echo -n "${hostname_value}" | tr -d '\r\n' | xargs || true)"
+fi
+hostname_value="${hostname_value:-localhost}"
 timestamp="$(date -Iseconds)"
 
 # Prefer route-derived source IP, then fallback to first global IPv4 address.

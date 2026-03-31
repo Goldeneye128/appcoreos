@@ -201,7 +201,15 @@ def apply_machine_config(config_text: str, mode: str, try_seconds: int) -> tuple
 
 
 def collect_services() -> tuple[int, dict]:
-  rc, out, err = run_command(["systemctl", "list-units", "--type=service", "--all", "--no-legend", "--no-pager"])
+  rc, out, err = run_command([
+    "systemctl",
+    "list-units",
+    "--type=service",
+    "--all",
+    "--plain",
+    "--no-legend",
+    "--no-pager",
+  ])
   if rc != 0:
     return (500, {"error": err.strip() or "failed to list services"})
 
@@ -213,6 +221,9 @@ def collect_services() -> tuple[int, dict]:
     if len(parts) < 4:
       continue
     unit, load, active, sub = parts[:4]
+    if unit == "●":
+      # Defensive parsing: skip malformed decorative entries.
+      continue
     description = parts[4] if len(parts) >= 5 else ""
     services.append(
       {

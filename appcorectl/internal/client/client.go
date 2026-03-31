@@ -159,6 +159,15 @@ func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, hea
 	return err
 }
 
+func (c *Client) GetText(ctx context.Context, path string, query url.Values, headers map[string]string) (string, error) {
+	status, respBody, err := c.doRequest(ctx, http.MethodGet, path, query, headers, nil, "text/plain, */*")
+	if err != nil {
+		return "", err
+	}
+	_ = status
+	return string(respBody), nil
+}
+
 func (c *Client) PostJSON(ctx context.Context, path string, query url.Values, headers map[string]string, body any, out any) error {
 	_, err := c.doJSON(ctx, http.MethodPost, path, query, headers, body, out)
 	return err
@@ -173,9 +182,39 @@ func (c *Client) doJSON(
 	body any,
 	out any,
 ) (int, error) {
+	var bodyBytes []byte
+	if body != nil {
+		var err error
+		bodyBytes, err = json.Marshal(body)
+		if err != nil {
+			return 0, fmt.Errorf("marshal request body: %w", err)
+		}
+	}
+	status, respBody, err := c.doRequest(ctx, method, path, query, headers, bodyBytes, "application/json")
+	if err != nil {
+		return status, err
+	}
+	if out == nil || len(respBody) == 0 {
+		return status, nil
+	}
+	if err := json.Unmarshal(respBody, out); err != nil {
+		return status, fmt.Errorf("decode response json: %w", err)
+	}
+	return status, nil
+}
+
+func (c *Client) doRequest(
+	ctx context.Context,
+	method string,
+	path string,
+	query url.Values,
+	headers map[string]string,
+	body []byte,
+	accept string,
+) (int, []byte, error) {
 	relative, err := url.Parse(path)
 	if err != nil {
-		return 0, fmt.Errorf("parse request path: %w", err)
+		return 0, nil, fmt.Errorf("parse request path: %w", err)
 	}
 	if query != nil {
 		relative.RawQuery = query.Encode()
@@ -183,20 +222,15 @@ func (c *Client) doJSON(
 	endpoint := c.baseURL.ResolveReference(relative)
 
 	var bodyReader io.Reader
-	if body != nil {
-		bytesBody, err := json.Marshal(body)
-		if err != nil {
-			return 0, fmt.Errorf("marshal request body: %w", err)
-		}
-		bodyReader = bytes.NewReader(bytesBody)
+	if len(body) > 0 {
+		bodyReader = bytes.NewReader(body)
 	}
-
 	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), bodyReader)
 	if err != nil {
-		return 0, fmt.Errorf("build request: %w", err)
+		return 0, nil, fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
+	req.Header.Set("Accept", accept)
+	if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if c.apiKey != "" {
@@ -209,26 +243,20 @@ func (c *Client) doJSON(
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		c.audit.write(auditEntry{Timestamp: time.Now().UTC(), Target: c.targetName, Verb: method, Path: path, ResultStatus: 0, Error: err.Error()})
-		return 0, &TransportError{Err: err}
+		return 0, nil, &TransportError{Err: err}
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return resp.StatusCode, fmt.Errorf("read response body: %w", err)
+		return resp.StatusCode, nil, fmt.Errorf("read response body: %w", err)
 	}
 	c.audit.write(auditEntry{Timestamp: time.Now().UTC(), Target: c.targetName, Verb: method, Path: path, ResultStatus: resp.StatusCode})
 
 	if resp.StatusCode >= 400 {
 		trimmed := strings.TrimSpace(string(respBody))
-		return resp.StatusCode, &APIError{StatusCode: resp.StatusCode, Method: method, Path: path, Body: trimmed}
+		return resp.StatusCode, nil, &APIError{StatusCode: resp.StatusCode, Method: method, Path: path, Body: trimmed}
 	}
-	if out == nil || len(respBody) == 0 {
-		return resp.StatusCode, nil
-	}
-	if err := json.Unmarshal(respBody, out); err != nil {
-		return resp.StatusCode, fmt.Errorf("decode response json: %w", err)
-	}
-	return resp.StatusCode, nil
+	return resp.StatusCode, respBody, nil
 }
 
 type auditEntry struct {
