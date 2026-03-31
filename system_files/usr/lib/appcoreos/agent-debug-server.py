@@ -345,6 +345,16 @@ class Handler(BaseHTTPRequestHandler):
     return (parsed, "")
 
   def _is_authenticated(self) -> bool:
+    # In claimed mode, a verified client certificate is sufficient auth.
+    if REQUIRE_MTLS:
+      conn = getattr(self, "connection", None)
+      if isinstance(conn, ssl.SSLSocket):
+        try:
+          if conn.getpeercert():
+            return True
+        except Exception:
+          pass
+
     if not API_KEY:
       return True
 

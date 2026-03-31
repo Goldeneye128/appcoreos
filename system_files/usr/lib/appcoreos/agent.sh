@@ -81,14 +81,34 @@ fi
 chmod 0600 "${API_AUTH_KEY_FILE}" || true
 api_auth_key="$(tr -d '\n' < "${API_AUTH_KEY_FILE}")"
 
+regen_tls_cert="0"
 if [[ ! -s "${API_TLS_CERT_FILE}" || ! -s "${API_TLS_KEY_FILE}" ]]; then
+  regen_tls_cert="1"
+elif ! openssl x509 -in "${API_TLS_CERT_FILE}" -noout -checkend 86400 >/dev/null 2>&1; then
+  # Regenerate if certificate expires within 24h.
+  regen_tls_cert="1"
+elif ! openssl x509 -in "${API_TLS_CERT_FILE}" -noout -ext subjectAltName 2>/dev/null | grep -q "IP Address:127.0.0.1"; then
+  # Regenerate legacy certs that do not include loopback SAN.
+  regen_tls_cert="1"
+fi
+
+if [[ "${regen_tls_cert}" == "1" ]]; then
   log "initializing API TLS certificate"
   rm -f "${API_TLS_CERT_FILE}" "${API_TLS_KEY_FILE}"
-  openssl req -x509 -newkey rsa:2048 -nodes \
+  primary_ip="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1 || true)"
+  san_list="DNS:localhost,DNS:appcoreos-api,IP:127.0.0.1"
+  if [[ -n "${primary_ip}" ]]; then
+    san_list="${san_list},IP:${primary_ip}"
+  fi
+  openssl req -x509 -newkey rsa:2048 -nodes -sha256 \
     -keyout "${API_TLS_KEY_FILE}" \
     -out "${API_TLS_CERT_FILE}" \
-    -days 3650 \
-    -subj "/CN=appcoreos-api" >/dev/null 2>&1
+    -days 397 \
+    -subj "/CN=appcoreos-api" \
+    -addext "basicConstraints=critical,CA:FALSE" \
+    -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+    -addext "extendedKeyUsage=serverAuth" \
+    -addext "subjectAltName=${san_list}" >/dev/null 2>&1
 fi
 chmod 0600 "${API_TLS_KEY_FILE}" || true
 chmod 0644 "${API_TLS_CERT_FILE}" || true

@@ -52,7 +52,7 @@ func (a *app) newTargetAddCommand() *cobra.Command {
 				return err
 			}
 			name := strings.TrimSpace(args[0])
-			r.cfg.Targets[name] = config.TargetProfile{
+			profile := config.TargetProfile{
 				URL:      strings.TrimSpace(urlRaw),
 				CAPath:   strings.TrimSpace(ca),
 				CertPath: strings.TrimSpace(cert),
@@ -60,6 +60,20 @@ func (a *app) newTargetAddCommand() *cobra.Command {
 				APIKey:   strings.TrimSpace(apiKey),
 				Insecure: insecure,
 			}
+			if profile.CAPath == "" && !profile.Insecure {
+				caPath, pinErr := security.PinServerCertificate(name, profile.URL)
+				if pinErr == nil {
+					profile.CAPath = caPath
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Pinned server certificate at %s\n", caPath)
+				} else {
+					_, _ = fmt.Fprintf(
+						cmd.ErrOrStderr(),
+						"Warning: could not auto-pin server certificate (%v). Use --ca or --insecure.\n",
+						pinErr,
+					)
+				}
+			}
+			r.cfg.Targets[name] = profile
 			if r.cfg.CurrentTarget == "" {
 				r.cfg.CurrentTarget = name
 			}

@@ -26,6 +26,9 @@ func (a *app) newBootstrapStatusCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := r.ensureServerTrustForBootstrap(cmd); err != nil {
+				return err
+			}
 			c, err := r.newClient()
 			if err != nil {
 				return err
@@ -52,6 +55,9 @@ func (a *app) newBootstrapClaimCommand() *cobra.Command {
 
 			r, err := a.buildRuntime(true)
 			if err != nil {
+				return err
+			}
+			if err := r.ensureServerTrustForBootstrap(cmd); err != nil {
 				return err
 			}
 
@@ -107,4 +113,26 @@ func (a *app) newBootstrapClaimCommand() *cobra.Command {
 	cmd.Flags().StringVar(&token, "token", "", "Bootstrap token")
 	cmd.Flags().StringVar(&clientCAFile, "client-ca-file", "", "Path to PEM CA certificate for client auth (auto-generated if omitted)")
 	return cmd
+}
+
+func (r *runtime) ensureServerTrustForBootstrap(cmd *cobra.Command) error {
+	if r.target.Insecure || strings.TrimSpace(r.target.CAPath) != "" {
+		return nil
+	}
+	caPath, err := security.PinServerCertificate(r.targetName, r.target.URL)
+	if err != nil {
+		return validateError(
+			"failed to establish TLS trust for bootstrap",
+			"set target CA with --ca, or use --insecure for local development",
+		)
+	}
+	profile := r.cfg.Targets[r.targetName]
+	profile.CAPath = caPath
+	r.cfg.Targets[r.targetName] = profile
+	if err := r.saveConfig(); err != nil {
+		return err
+	}
+	r.target.CAPath = caPath
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Pinned server certificate for %q at %s\n", r.targetName, caPath)
+	return nil
 }
