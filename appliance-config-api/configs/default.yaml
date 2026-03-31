@@ -1,0 +1,6 @@
+hostname: appliance-default
+containers:
+  - name: nginx
+    image: docker.io/library/nginx:latest
+    ports:
+      - "8080:80"

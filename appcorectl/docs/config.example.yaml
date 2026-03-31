@@ -1,0 +1,10 @@
+current_target: lab
+output: table
+targets:
+  lab:
+    url: https://host:9090
+    ca: /etc/appcore/ca.pem
+    cert: /etc/appcore/client.crt
+    key: /etc/appcore/client.key
+    api_key: replace-me
+    insecure: false

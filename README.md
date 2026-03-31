@@ -28,6 +28,8 @@ Goal: a Talos-style appliance experience without Kubernetes.
 - `runvm.sh`: run qcow2 locally with QEMU
 - `dev.sh`: clean/build/run helper
 - `docs/`: API + OS setup documentation
+- `appcorectl/`: Go CLI client for AppCoreOS API operations
+- `appliance-config-api/`: simple config API service used by the node agent
 
 ## Quick Start
 
