@@ -2,6 +2,15 @@
 # based directly on Fedora CoreOS.
 FROM quay.io/fedora/fedora-coreos:stable
 
+ARG APPCOREOS_VERSION="43"
+
+LABEL com.coreos.osname="appcoreos" \
+      org.opencontainers.image.title="appcoreos" \
+      org.opencontainers.image.description="Immutable API-driven appliance OS based on Fedora CoreOS" \
+      org.opencontainers.image.version="${APPCOREOS_VERSION}" \
+      org.opencontainers.image.vendor="AppCoreOS Project" \
+      org.opencontainers.image.source="https://github.com/christiandevik/appcoreos"
+
 # Install only the packages required for this bootstrap phase.
 # - podman: container runtime (Quadlet)
 # - yq: parse machine-config YAML
@@ -78,8 +87,13 @@ RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/boo
     && (systemctl mask serial-getty@ttyS0.service || true) \
     && mkdir -p /var/lib/appcoreos \
     && mkdir -p /etc/containers/systemd \
-    && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /etc/os-release \
-    && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release \
+    && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /usr/lib/os-release \
+    && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /usr/lib/os-release \
+    && (grep -q '^VARIANT=' /usr/lib/os-release && sed -i 's/^VARIANT=.*/VARIANT=\"AppCoreOS\"/' /usr/lib/os-release || echo 'VARIANT=\"AppCoreOS\"' >> /usr/lib/os-release) \
+    && (grep -q '^VARIANT_ID=' /usr/lib/os-release && sed -i 's/^VARIANT_ID=.*/VARIANT_ID=\"appcoreos\"/' /usr/lib/os-release || echo 'VARIANT_ID=\"appcoreos\"' >> /usr/lib/os-release) \
+    && (grep -q '^IMAGE_ID=' /usr/lib/os-release && sed -i 's/^IMAGE_ID=.*/IMAGE_ID=\"appcoreos\"/' /usr/lib/os-release || echo 'IMAGE_ID=\"appcoreos\"' >> /usr/lib/os-release) \
+    && (grep -q '^IMAGE_VERSION=' /usr/lib/os-release && sed -i 's/^IMAGE_VERSION=.*/IMAGE_VERSION=\"43\"/' /usr/lib/os-release || echo 'IMAGE_VERSION=\"43\"' >> /usr/lib/os-release) \
+    && ln -sf ../usr/lib/os-release /etc/os-release \
     && (systemctl preset-all || true) \
     && (systemctl enable bootc-fetch-apply-updates.timer || true) \
     && systemctl enable appcore.target machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service init-bootstrap.service agent.service tui.service appcoreos-reboot-window.timer
