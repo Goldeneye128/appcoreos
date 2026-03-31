@@ -46,8 +46,16 @@ QEMU mode:
 ## 4. Console/TUI
 
 - TUI owns serial console.
-- Shows machine info, networking, config source, and API key.
+- Shows machine info, networking, claim token/state, and API key.
 - No SSH intended for operations.
+
+## 4.1 Day-0 Claim Flow
+
+1. Node boots unclaimed with bootstrap token in TUI.
+2. Operator calls `POST /v1/bootstrap/claim` with:
+   - `X-Bootstrap-Token` header
+   - client CA PEM in JSON body
+3. Agent restarts and API begins enforcing mTLS.
 
 ## 5. Runtime Model
 
@@ -100,7 +108,7 @@ Startup flow:
 
 ## 9. Next Production Steps
 
-- Replace API-key-only model with mTLS + RBAC.
+- Add role-based authorization (RBAC) on top of mTLS identities.
 - Trust/pin node certificates from provisioning data.
 - Add full strategic merge patch for machine config.
 - Add dedicated rollback semantics for host updates.

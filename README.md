@@ -88,6 +88,33 @@ updates:
 - API key required for management endpoints
 - TUI is the primary local interface
 
+## Day-0 Bootstrap (Claim)
+
+On first boot the node is **unclaimed** and shows a bootstrap token in the TUI.
+
+Claim flow:
+
+1. Read `Bootstrap token` from TUI.
+2. Submit client CA to claim endpoint:
+
+```bash
+curl -k -X POST \
+  -H "X-Bootstrap-Token: <BOOTSTRAP_TOKEN>" \
+  -H "Content-Type: application/json" \
+  --data-binary @claim.json \
+  https://127.0.0.1:9090/v1/bootstrap/claim
+```
+
+`claim.json`:
+
+```json
+{
+  "client_ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
+}
+```
+
+After claim, agent restarts and API enforces mTLS.
+
 ## Documentation
 
 - API reference: [`docs/API.md`](docs/API.md)

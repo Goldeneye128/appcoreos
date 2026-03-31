@@ -20,6 +20,10 @@ PORT = int(os.environ.get("APPCOREOS_API_PORT", "9090"))
 API_KEY = os.environ.get("APPCOREOS_API_KEY", "")
 TLS_CERT = os.environ.get("APPCOREOS_TLS_CERT", "")
 TLS_KEY = os.environ.get("APPCOREOS_TLS_KEY", "")
+REQUIRE_MTLS = os.environ.get("APPCOREOS_REQUIRE_MTLS", "0") == "1"
+CLIENT_CA = os.environ.get("APPCOREOS_CLIENT_CA", "/var/lib/appcoreos/pki/client-ca.crt")
+BOOTSTRAP_TOKEN_FILE = Path(os.environ.get("APPCOREOS_BOOTSTRAP_TOKEN_FILE", "/var/lib/appcoreos/bootstrap/token"))
+BOOTSTRAP_CLAIMED_FILE = Path(os.environ.get("APPCOREOS_BOOTSTRAP_CLAIMED_FILE", "/var/lib/appcoreos/bootstrap/claimed"))
 MAX_LOG_TAIL = 5000
 MAX_CONFIG_BYTES = 1024 * 1024
 LOG_FILE_ALLOWLIST = ["/var/log/", "/var/lib/appcoreos/"]
@@ -100,6 +104,17 @@ def read_os_release() -> dict[str, str]:
 def read_machine_id() -> str:
   try:
     return MACHINE_ID_FILE.read_text(encoding="utf-8").strip()
+  except Exception:
+    return ""
+
+
+def bootstrap_claimed() -> bool:
+  return BOOTSTRAP_CLAIMED_FILE.exists()
+
+
+def read_bootstrap_token() -> str:
+  try:
+    return BOOTSTRAP_TOKEN_FILE.read_text(encoding="utf-8").strip()
   except Exception:
     return ""
 
@@ -347,7 +362,10 @@ class Handler(BaseHTTPRequestHandler):
     return False
 
   def _require_auth(self, path: str) -> bool:
-    if path in {"/health", "/healthz", "/v1/health"}:
+    if path in {"/health", "/healthz", "/v1/health", "/v1/bootstrap/status"}:
+      return True
+
+    if path == "/v1/bootstrap/claim" and not bootstrap_claimed():
       return True
 
     if self._is_authenticated():
@@ -366,6 +384,20 @@ class Handler(BaseHTTPRequestHandler):
 
     if path in {"/health", "/healthz", "/v1/health"}:
       self._write_json(200, {"status": "ok"})
+      return
+
+    if path == "/v1/bootstrap/status":
+      token = read_bootstrap_token()
+      payload = {
+        "machine_id": read_machine_id(),
+        "claimed": bootstrap_claimed(),
+        "require_mtls": REQUIRE_MTLS,
+        "client_ca_present": Path(CLIENT_CA).exists(),
+        "claim_endpoint": "/v1/bootstrap/claim",
+      }
+      if not bootstrap_claimed():
+        payload["bootstrap_token"] = token
+      self._write_json(200, payload)
       return
 
     if path in {"/state", "/v1/state"}:
@@ -581,6 +613,69 @@ class Handler(BaseHTTPRequestHandler):
     path = parsed.path
 
     if not self._require_auth(path):
+      return
+
+    if path == "/v1/bootstrap/claim":
+      log("POST /v1/bootstrap/claim")
+      if bootstrap_claimed():
+        self._write_json(409, {"error": "node is already claimed"})
+        return
+
+      expected_token = read_bootstrap_token()
+      provided_token = self.headers.get("X-Bootstrap-Token", "").strip()
+      if not expected_token:
+        self._write_json(500, {"error": "bootstrap token not initialized"})
+        return
+      if provided_token != expected_token:
+        self._write_json(401, {"error": "invalid bootstrap token"})
+        return
+
+      body, err = self._read_json_body()
+      if body is None:
+        self._write_json(400, {"error": err})
+        return
+
+      client_ca_pem = str(body.get("client_ca_pem", "")).strip()
+      if not client_ca_pem:
+        self._write_json(400, {"error": "missing client_ca_pem"})
+        return
+      if "BEGIN CERTIFICATE" not in client_ca_pem or "END CERTIFICATE" not in client_ca_pem:
+        self._write_json(400, {"error": "client_ca_pem is not a valid PEM certificate"})
+        return
+
+      client_ca_path = Path(CLIENT_CA)
+      client_ca_path.parent.mkdir(parents=True, exist_ok=True)
+      tmp_ca_path = client_ca_path.with_suffix(".tmp")
+      tmp_ca_path.write_text(client_ca_pem.rstrip() + "\n", encoding="utf-8")
+      tmp_ca_path.replace(client_ca_path)
+      try:
+        client_ca_path.chmod(0o600)
+      except Exception:
+        pass
+
+      BOOTSTRAP_CLAIMED_FILE.parent.mkdir(parents=True, exist_ok=True)
+      BOOTSTRAP_CLAIMED_FILE.write_text(datetime.datetime.now(datetime.timezone.utc).isoformat() + "\n", encoding="utf-8")
+
+      # Restart agent shortly after returning so TLS mode switches to mTLS.
+      run_command(
+        [
+          "systemd-run",
+          "--unit",
+          "appcoreos-agent-restart",
+          "--on-active=1",
+          "/usr/bin/systemctl",
+          "restart",
+          "agent.service",
+        ]
+      )
+
+      self._write_json(
+        202,
+        {
+          "result": "accepted",
+          "message": "bootstrap claim accepted; agent restart scheduled to enforce mTLS",
+        },
+      )
       return
 
     container_action_match = re.match(r"^/containers/([^/]+)/(start|restart|stop)$|^/v1/containers/([^/]+)/(start|restart|stop)$", path)
@@ -842,8 +937,16 @@ def main() -> None:
   if TLS_CERT and TLS_KEY and Path(TLS_CERT).exists() and Path(TLS_KEY).exists():
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certfile=TLS_CERT, keyfile=TLS_KEY)
+    if REQUIRE_MTLS:
+      if not CLIENT_CA or not Path(CLIENT_CA).exists():
+        raise RuntimeError("mTLS required but client CA is missing")
+      context.load_verify_locations(cafile=CLIENT_CA)
+      context.verify_mode = ssl.CERT_REQUIRED
     server.socket = context.wrap_socket(server.socket, server_side=True)
-    log(f"api listening on https://{HOST}:{PORT} (tls + api-key)")
+    if REQUIRE_MTLS:
+      log(f"api listening on https://{HOST}:{PORT} (tls + mtls + api-key)")
+    else:
+      log(f"api listening on https://{HOST}:{PORT} (tls + api-key)")
   else:
     log(f"api listening on http://{HOST}:{PORT} (api-key)")
 

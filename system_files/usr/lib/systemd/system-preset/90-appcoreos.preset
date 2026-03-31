@@ -6,6 +6,7 @@ enable containers.service
 enable podman-auto-update.timer
 enable state.timer
 enable machine-id.service
+enable init-bootstrap.service
 enable agent.service
 enable tui.service
 enable bootc-fetch-apply-updates.timer

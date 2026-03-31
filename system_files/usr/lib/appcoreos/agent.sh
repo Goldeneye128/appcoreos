@@ -12,6 +12,9 @@ DEBUG_SERVER_SCRIPT="/usr/lib/appcoreos/agent-debug-server.py"
 API_AUTH_KEY_FILE="/var/lib/appcoreos/api-auth.key"
 API_TLS_CERT_FILE="/var/lib/appcoreos/api-cert.pem"
 API_TLS_KEY_FILE="/var/lib/appcoreos/api-key.pem"
+BOOTSTRAP_TOKEN_FILE="/var/lib/appcoreos/bootstrap/token"
+BOOTSTRAP_CLAIMED_FILE="/var/lib/appcoreos/bootstrap/claimed"
+CLIENT_CA_FILE="/var/lib/appcoreos/pki/client-ca.crt"
 API_PORT="9090"
 MAX_CONFIG_BYTES=1048576
 MIN_REBOOT_INTERVAL_SECONDS=60
@@ -95,6 +98,21 @@ export APPCOREOS_API_PORT="${API_PORT}"
 export APPCOREOS_API_KEY="${api_auth_key}"
 export APPCOREOS_TLS_CERT="${API_TLS_CERT_FILE}"
 export APPCOREOS_TLS_KEY="${API_TLS_KEY_FILE}"
+export APPCOREOS_BOOTSTRAP_TOKEN_FILE="${BOOTSTRAP_TOKEN_FILE}"
+export APPCOREOS_BOOTSTRAP_CLAIMED_FILE="${BOOTSTRAP_CLAIMED_FILE}"
+export APPCOREOS_CLIENT_CA="${CLIENT_CA_FILE}"
+export APPCOREOS_REQUIRE_MTLS="0"
+
+if [[ -f "${BOOTSTRAP_CLAIMED_FILE}" ]]; then
+  if [[ -s "${CLIENT_CA_FILE}" ]]; then
+    export APPCOREOS_REQUIRE_MTLS="1"
+    log "bootstrap claim detected; enforcing mTLS"
+  else
+    log "bootstrap claim marker found but client CA missing; starting without mTLS"
+  fi
+else
+  log "node unclaimed; bootstrap token flow enabled"
+fi
 
 log "starting local API server on https://127.0.0.1:${API_PORT}"
 python3 "${DEBUG_SERVER_SCRIPT}" &

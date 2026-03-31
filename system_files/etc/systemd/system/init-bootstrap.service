@@ -1,0 +1,14 @@
+# Initialize bootstrap token and trust-material paths before agent starts.
+[Unit]
+Description=Initialize AppCoreOS bootstrap state
+Documentation=man:systemd.service(5)
+After=machine-id.service
+Before=agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/appcoreos/init-bootstrap.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=appcore.target

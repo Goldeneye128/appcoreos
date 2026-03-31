@@ -4,7 +4,8 @@ Description=AppCoreOS local agent
 Documentation=man:systemd.service(5)
 After=state.service
 After=machine-id.service
-Wants=state.service machine-id.service
+After=init-bootstrap.service
+Wants=state.service machine-id.service init-bootstrap.service
 
 [Service]
 Type=simple

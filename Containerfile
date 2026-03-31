@@ -50,6 +50,7 @@ RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/boo
     && chmod 0755 /usr/lib/appcoreos/generate-containers.sh \
     && chmod 0755 /usr/lib/appcoreos/generate-state.sh \
     && chmod 0755 /usr/lib/appcoreos/init-machine-id.sh \
+    && chmod 0755 /usr/lib/appcoreos/init-bootstrap.sh \
     && chmod 0755 /usr/lib/appcoreos/update-os.sh \
     && chmod 0755 /usr/lib/appcoreos/reboot-if-update-window.sh \
     && chmod 0755 /usr/lib/appcoreos/agent.sh \
@@ -81,7 +82,7 @@ RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/boo
     && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /etc/os-release \
     && (systemctl preset-all || true) \
     && (systemctl enable bootc-fetch-apply-updates.timer || true) \
-    && systemctl enable appcore.target machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service agent.service tui.service appcoreos-reboot-window.timer
+    && systemctl enable appcore.target machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service init-bootstrap.service agent.service tui.service appcoreos-reboot-window.timer
 
 # systemd as PID 1 for containerized test runs.
 STOPSIGNAL SIGRTMIN+3

@@ -33,6 +33,23 @@ curl -k -H "Authorization: Bearer <API_KEY>" \
   https://127.0.0.1:9090/v1/state
 ```
 
+## Bootstrap Endpoints
+
+Before node claim:
+
+- `GET /v1/bootstrap/status`
+- `POST /v1/bootstrap/claim` (requires `X-Bootstrap-Token` header)
+
+Claim request body:
+
+```json
+{
+  "client_ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
+}
+```
+
+After successful claim, agent restarts and API switches to mTLS mode.
+
 ## Endpoint Reference
 
 ### Health and Info
@@ -130,6 +147,19 @@ Network config payload (static):
 
 Note: staging requires the host to track a reachable image reference. If the deployment is based on `localhost/...` (common in local test builds), staging will fail until rebased to a registry URL.
 
+## mTLS Request Example
+
+After claim, include client cert/key and trusted CA:
+
+```bash
+curl \
+  --cacert ca.crt \
+  --cert client.crt \
+  --key client.key \
+  -H "Authorization: Bearer <API_KEY>" \
+  https://127.0.0.1:9090/v1/info
+```
+
 ### Disk and Mounts
 
 - `GET /v1/disks`
@@ -148,7 +178,7 @@ This API follows Talos-style principles adapted for AppCoreOS:
 ## Current Limits
 
 - TLS is self-signed (client should use trust pinning in production).
-- API key is bootstrap auth; mTLS RBAC is planned.
+- mTLS bootstrap is implemented; fine-grained RBAC is planned.
 - `PATCH /v1/machine-config` currently appends YAML patch text (minimal behavior).
 - `POST /v1/host/rollback` placeholder only.
 
