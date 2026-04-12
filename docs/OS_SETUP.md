@@ -120,4 +120,4 @@ Startup flow:
   - a staged deployment is pending, and
   - current UTC time is in configured maintenance window.
 - API endpoint `POST /v1/host/update` triggers immediate stage check (`update-os.service`).
-- Update staging requires a reachable container image source (not `localhost/...`).
+- The default build installs from `ghcr.io/goldeneye128/appcoreos:latest`, so update staging follows the published registry image automatically.

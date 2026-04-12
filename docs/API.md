@@ -145,7 +145,7 @@ Network config payload (static):
 - `GET /v1/host/update-status`
 - `POST /v1/host/rollback` (currently returns not implemented)
 
-Note: staging requires the host to track a reachable image reference. If the deployment is based on `localhost/...` (common in local test builds), staging will fail until rebased to a registry URL.
+Note: staging requires the host to track a reachable image reference. The default AppCoreOS build now installs from `ghcr.io/goldeneye128/appcoreos:latest`, so published images can be staged directly through the bootc update flow.
 
 ## mTLS Request Example
 

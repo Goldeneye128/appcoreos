@@ -71,7 +71,7 @@ curl -k -H "Authorization: Bearer <API_KEY>" https://127.0.0.1:9090/v1/state
   - `.github/workflows/daily-image-build.yml`
 
 If nodes track a published image tag (for example GHCR `:latest` or a channel tag), they can consume updates from that registry image.
-For local qcow2 builds that reference `localhost/...`, host updates cannot be fetched until you rebase to a reachable registry image.
+By default, local qcow2 builds now track `ghcr.io/goldeneye128/appcoreos:latest`, so bootc/rpm-ostree staging can follow the published registry image for automatic host updates.
 
 Optional machine-config policy:
 

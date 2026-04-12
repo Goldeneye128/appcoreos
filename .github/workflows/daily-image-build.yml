@@ -44,6 +44,9 @@ jobs:
           platforms: linux/amd64
           pull: true
           push: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           tags: |
             ghcr.io/${{ steps.vars.outputs.owner_lc }}/appcoreos:latest
             ghcr.io/${{ steps.vars.outputs.owner_lc }}/appcoreos:${{ steps.vars.outputs.date_tag }}

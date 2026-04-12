@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_REF="localhost/appcoreos:latest"
+IMAGE_REF="${IMAGE_REF:-ghcr.io/goldeneye128/appcoreos:latest}"
 IMAGE_ARCH="amd64"
 TARGET_ARCH="x86_64"
 BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest"
@@ -219,6 +219,7 @@ fi
 
 prepare_logging
 prepare_dirs
+log "tracking image reference: ${IMAGE_REF}"
 
 case "${TARGET}" in
   local)
