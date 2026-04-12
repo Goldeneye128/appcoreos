@@ -12,6 +12,7 @@ Goal: a Talos-style appliance experience without Kubernetes.
 
 ## Current Status
 
+- Public alpha: usable for development and local VM testing, not yet production-hardened.
 - Custom image build via `Containerfile`
 - VM image build (`qcow2`) via `build.sh`
 - Local VM runner via `runvm.sh`
