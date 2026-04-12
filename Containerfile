@@ -9,7 +9,7 @@ LABEL com.coreos.osname="appcoreos" \
       org.opencontainers.image.description="Immutable API-driven appliance OS based on Fedora CoreOS" \
       org.opencontainers.image.version="${APPCOREOS_VERSION}" \
       org.opencontainers.image.vendor="AppCoreOS Project" \
-      org.opencontainers.image.source="https://github.com/christiandevik/appcoreos"
+      org.opencontainers.image.source="https://github.com/Goldeneye128/appcoreos"
 
 # Install only the packages required for this bootstrap phase.
 # - podman: container runtime (Quadlet)
