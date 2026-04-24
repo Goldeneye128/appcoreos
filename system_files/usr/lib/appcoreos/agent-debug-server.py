@@ -5,6 +5,7 @@ import os
 import re
 import ssl
 import subprocess
+import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -82,10 +83,198 @@ def is_valid_name(name: str) -> bool:
   return re.match(r"^[A-Za-z0-9_.-]+$", name) is not None
 
 
-def safe_log_file_path(requested_path: str) -> bool:
+def resolve_log_file_path(requested_path: str) -> Path | None:
   if not requested_path.startswith("/"):
+    return None
+  try:
+    resolved = Path(requested_path).resolve(strict=False)
+  except Exception:
+    return None
+
+  for prefix in LOG_FILE_ALLOWLIST:
+    try:
+      allowed_root = Path(prefix).resolve(strict=False)
+    except Exception:
+      continue
+    try:
+      if os.path.commonpath([str(resolved), str(allowed_root)]) == str(allowed_root):
+        return resolved
+    except ValueError:
+      continue
+  return None
+
+
+def api_auth_mode() -> str:
+  if REQUIRE_MTLS and API_KEY:
+    return "mtls+api-key"
+  if REQUIRE_MTLS:
+    return "mtls"
+  if API_KEY:
+    return "api-key"
+  return "none"
+
+
+def request_is_authenticated(
+  requires_mtls: bool,
+  peer_cert_verified: bool,
+  expected_api_key: str,
+  auth_header: str,
+  api_key_header: str,
+) -> bool:
+  if requires_mtls and not peer_cert_verified:
     return False
-  return any(requested_path.startswith(prefix) for prefix in LOG_FILE_ALLOWLIST)
+
+  if not expected_api_key:
+    return True
+
+  if api_key_header == expected_api_key:
+    return True
+
+  if auth_header.startswith("Bearer "):
+    token = auth_header.split(" ", 1)[1].strip()
+    if token == expected_api_key:
+      return True
+
+  return False
+
+
+def auth_hint() -> str:
+  if REQUIRE_MTLS and API_KEY:
+    return "use mTLS client credentials and Authorization: Bearer <api-key>"
+  if REQUIRE_MTLS:
+    return "use mTLS client credentials"
+  if API_KEY:
+    return "use Authorization: Bearer <api-key>"
+  return "authentication required"
+
+
+def bootstrap_status_payload() -> dict:
+  payload = {
+    "machine_id": read_machine_id(),
+    "claimed": bootstrap_claimed(),
+    "require_mtls": REQUIRE_MTLS,
+    "client_ca_present": Path(CLIENT_CA).exists(),
+    "claim_endpoint": "/v1/bootstrap/claim",
+  }
+  if not bootstrap_claimed():
+    payload["bootstrap_token_present"] = bool(read_bootstrap_token())
+  return payload
+
+
+def validate_pem_certificate(cert_pem: str) -> bool:
+  try:
+    ssl.PEM_cert_to_DER_cert(cert_pem)
+    return True
+  except Exception:
+    return False
+
+
+def write_temp_machine_config(config_text: str) -> Path:
+  fd, temp_path = tempfile.mkstemp(prefix="appcoreos-machine-config-", suffix=".yaml")
+  try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+      handle.write(config_text)
+  except Exception:
+    os.unlink(temp_path)
+    raise
+  return Path(temp_path)
+
+
+def ensure_network_connection(connection_name: str, interface: str) -> tuple[bool, str]:
+  rc, _, err = run_command(["nmcli", "connection", "show", connection_name])
+  if rc != 0:
+    rc, _, err = run_command(
+      [
+        "nmcli",
+        "connection",
+        "add",
+        "type",
+        "ethernet",
+        "ifname",
+        interface,
+        "con-name",
+        connection_name,
+        "autoconnect",
+        "yes",
+      ]
+    )
+    if rc != 0:
+      return (False, err.strip() or "failed to create network connection")
+
+  rc, _, err = run_command(
+    [
+      "nmcli",
+      "connection",
+      "modify",
+      connection_name,
+      "connection.interface-name",
+      interface,
+      "autoconnect",
+      "yes",
+    ]
+  )
+  if rc != 0:
+    return (False, err.strip() or "failed to update network connection")
+  return (True, "")
+
+
+def configure_network_connection(interface: str, mode: str, address: str, gateway: str, dns_list: list[str]) -> tuple[int, dict]:
+  connection_name = f"appcoreos-{interface}"
+  ok, error = ensure_network_connection(connection_name, interface)
+  if not ok:
+    return (500, {"error": error})
+
+  if mode == "dhcp":
+    rc, _, err = run_command(
+      [
+        "nmcli",
+        "connection",
+        "modify",
+        connection_name,
+        "ipv4.method",
+        "auto",
+        "ipv4.addresses",
+        "",
+        "ipv4.gateway",
+        "",
+        "ipv4.dns",
+        "",
+        "ipv4.ignore-auto-dns",
+        "no",
+      ]
+    )
+    if rc != 0:
+      return (500, {"error": err.strip() or "failed to configure dhcp"})
+  else:
+    rc, _, err = run_command(
+      [
+        "nmcli",
+        "connection",
+        "modify",
+        connection_name,
+        "ipv4.method",
+        "manual",
+        "ipv4.addresses",
+        address,
+        "ipv4.gateway",
+        gateway,
+        "ipv4.ignore-auto-dns",
+        "yes",
+      ]
+    )
+    if rc != 0:
+      return (500, {"error": err.strip() or "failed to configure static network"})
+
+    dns_value = ",".join(entry for entry in dns_list if entry)
+    rc, _, err = run_command(["nmcli", "connection", "modify", connection_name, "ipv4.dns", dns_value])
+    if rc != 0:
+      return (500, {"error": err.strip() or "failed to configure dns"})
+
+  rc, _, err = run_command(["nmcli", "connection", "up", connection_name])
+  if rc != 0:
+    return (500, {"error": err.strip() or "failed to activate network connection"})
+
+  return (200, {"result": "ok", "mode": mode, "interface": interface})
 
 
 def read_os_release() -> dict[str, str]:
@@ -137,17 +326,26 @@ def validate_machine_config(config_text: str) -> tuple[bool, str]:
   if len(config_text.encode("utf-8")) >= MAX_CONFIG_BYTES:
     return (False, f"config too large (max {MAX_CONFIG_BYTES} bytes)")
 
-  check_yaml_cmd = "cat >/tmp/appcoreos-api-config-check.yaml && yq -e '.' /tmp/appcoreos-api-config-check.yaml >/dev/null"
-  rc, _, err = run_shell(f"{check_yaml_cmd} <<'EOF'\n{config_text}\nEOF")
-  if rc != 0:
-    return (False, f"invalid YAML: {err.strip()}")
+  temp_path = write_temp_machine_config(config_text)
+  try:
+    rc, _, err = run_command(["yq", "-e", ".", str(temp_path)])
+    if rc != 0:
+      return (False, f"invalid YAML: {err.strip()}")
 
-  shape_cmd = "cat >/tmp/appcoreos-api-config-shape.yaml && yq -e '(.hostname | type) == \"!!str\" and (.hostname | length) > 0 and (.containers | type) == \"!!seq\"' /tmp/appcoreos-api-config-shape.yaml >/dev/null"
-  rc, _, err = run_shell(f"{shape_cmd} <<'EOF'\n{config_text}\nEOF")
-  if rc != 0:
-    return (False, "missing/invalid required fields: hostname:string, containers:array")
+    rc, _, err = run_command(
+      [
+        "yq",
+        "-e",
+        '(.hostname | type) == "!!str" and (.hostname | length) > 0 and (.containers | type) == "!!seq"',
+        str(temp_path),
+      ]
+    )
+    if rc != 0:
+      return (False, "missing/invalid required fields: hostname:string, containers:array")
 
-  return (True, "")
+    return (True, "")
+  finally:
+    temp_path.unlink(missing_ok=True)
 
 
 def apply_machine_config(config_text: str, mode: str, try_seconds: int) -> tuple[int, dict]:
@@ -356,31 +554,23 @@ class Handler(BaseHTTPRequestHandler):
     return (parsed, "")
 
   def _is_authenticated(self) -> bool:
-    # In claimed mode, a verified client certificate is sufficient auth.
+    peer_cert_verified = False
     if REQUIRE_MTLS:
       conn = getattr(self, "connection", None)
       if isinstance(conn, ssl.SSLSocket):
         try:
           if conn.getpeercert():
-            return True
+            peer_cert_verified = True
         except Exception:
           pass
 
-    if not API_KEY:
-      return True
-
-    auth_header = self.headers.get("Authorization", "")
-    api_key_header = self.headers.get("X-API-Key", "")
-
-    if api_key_header == API_KEY:
-      return True
-
-    if auth_header.startswith("Bearer "):
-      token = auth_header.split(" ", 1)[1].strip()
-      if token == API_KEY:
-        return True
-
-    return False
+    return request_is_authenticated(
+      REQUIRE_MTLS,
+      peer_cert_verified,
+      API_KEY,
+      self.headers.get("Authorization", ""),
+      self.headers.get("X-API-Key", ""),
+    )
 
   def _require_auth(self, path: str) -> bool:
     if path in {"/health", "/healthz", "/v1/health", "/v1/bootstrap/status"}:
@@ -392,7 +582,7 @@ class Handler(BaseHTTPRequestHandler):
     if self._is_authenticated():
       return True
 
-    self._write_json(401, {"error": "unauthorized", "hint": "use Authorization: Bearer <api-key>"})
+    self._write_json(401, {"error": "unauthorized", "hint": auth_hint()})
     return False
 
   def do_GET(self) -> None:
@@ -408,17 +598,7 @@ class Handler(BaseHTTPRequestHandler):
       return
 
     if path == "/v1/bootstrap/status":
-      token = read_bootstrap_token()
-      payload = {
-        "machine_id": read_machine_id(),
-        "claimed": bootstrap_claimed(),
-        "require_mtls": REQUIRE_MTLS,
-        "client_ca_present": Path(CLIENT_CA).exists(),
-        "claim_endpoint": "/v1/bootstrap/claim",
-      }
-      if not bootstrap_claimed():
-        payload["bootstrap_token"] = token
-      self._write_json(200, payload)
+      self._write_json(200, bootstrap_status_payload())
       return
 
     if path in {"/state", "/v1/state"}:
@@ -454,7 +634,7 @@ class Handler(BaseHTTPRequestHandler):
           "api": {
             "version": "v1",
             "tls_enabled": bool(TLS_CERT and TLS_KEY),
-            "auth": "api-key" if API_KEY else "none",
+            "auth": api_auth_mode(),
           },
         },
       )
@@ -500,10 +680,11 @@ class Handler(BaseHTTPRequestHandler):
       if not requested:
         self._write_json(400, {"error": "missing path query parameter"})
         return
-      if not safe_log_file_path(requested):
+      resolved_path = resolve_log_file_path(requested)
+      if resolved_path is None:
         self._write_json(403, {"error": "path is outside allowed log roots"})
         return
-      rc, out, err = run_command(["tail", "-n", str(tail), requested])
+      rc, out, err = run_command(["tail", "-n", str(tail), str(resolved_path)])
       if rc == 0:
         self._write_text(200, out, "text/plain; charset=utf-8")
       else:
@@ -660,7 +841,7 @@ class Handler(BaseHTTPRequestHandler):
       if not client_ca_pem:
         self._write_json(400, {"error": "missing client_ca_pem"})
         return
-      if "BEGIN CERTIFICATE" not in client_ca_pem or "END CERTIFICATE" not in client_ca_pem:
+      if not validate_pem_certificate(client_ca_pem):
         self._write_json(400, {"error": "client_ca_pem is not a valid PEM certificate"})
         return
 
@@ -805,13 +986,8 @@ class Handler(BaseHTTPRequestHandler):
         return
 
       if mode == "dhcp":
-        cmd = f"nmcli connection add type ethernet ifname {interface} con-name appcoreos-{interface} ipv4.method auto >/dev/null 2>&1 || true; nmcli connection modify appcoreos-{interface} ipv4.method auto ipv4.addresses '' ipv4.gateway '' ipv4.dns ''"
-        rc, _, cmd_err = run_shell(cmd)
-        if rc != 0:
-          self._write_json(500, {"error": cmd_err.strip() or "failed to configure dhcp"})
-          return
-        run_command(["nmcli", "connection", "up", f"appcoreos-{interface}"])
-        self._write_json(200, {"result": "ok", "mode": "dhcp", "interface": interface})
+        code, payload = configure_network_connection(interface, mode, "", "", [])
+        self._write_json(code, payload)
         return
 
       address = str(body.get("address", "")).strip()
@@ -823,19 +999,14 @@ class Handler(BaseHTTPRequestHandler):
       if dns_list and not isinstance(dns_list, list):
         self._write_json(400, {"error": "dns must be an array"})
         return
-      dns_str = ",".join(str(item).strip() for item in dns_list if str(item).strip())
-      cmd = (
-        f"nmcli connection add type ethernet ifname {interface} con-name appcoreos-{interface} ipv4.method manual >/dev/null 2>&1 || true; "
-        f"nmcli connection modify appcoreos-{interface} ipv4.method manual ipv4.addresses '{address}' ipv4.gateway '{gateway}'"
+      code, payload = configure_network_connection(
+        interface,
+        mode,
+        address,
+        gateway,
+        [str(item).strip() for item in dns_list if str(item).strip()],
       )
-      if dns_str:
-        cmd += f" ipv4.dns '{dns_str}'"
-      rc, _, cmd_err = run_shell(cmd)
-      if rc != 0:
-        self._write_json(500, {"error": cmd_err.strip() or "failed to configure static network"})
-        return
-      run_command(["nmcli", "connection", "up", f"appcoreos-{interface}"])
-      self._write_json(200, {"result": "ok", "mode": "static", "interface": interface})
+      self._write_json(code, payload)
       return
 
     stack_match = re.match(r"^/v1/stacks/([^/]+)$", path)
@@ -957,6 +1128,8 @@ def main() -> None:
   server = ThreadingHTTPServer((HOST, PORT), Handler)
   if TLS_CERT and TLS_KEY and Path(TLS_CERT).exists() and Path(TLS_KEY).exists():
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    # BaseHTTPRequestHandler only speaks HTTP/1.1, so advertise that explicitly.
+    context.set_alpn_protocols(["http/1.1"])
     context.load_cert_chain(certfile=TLS_CERT, keyfile=TLS_KEY)
     if REQUIRE_MTLS:
       if not CLIENT_CA or not Path(CLIENT_CA).exists():

@@ -18,6 +18,7 @@ STATE_FILE = Path("/var/lib/appcoreos/state.json")
 LAST_UPDATE_FILE = Path("/var/lib/appcoreos/last-update")
 MACHINE_ID_FILE = Path("/var/lib/appcoreos/machine-id")
 REMOTE_CONFIG_BASE_URL_DEFAULT = "http://10.0.2.2:8081/config"
+API_AUTH_KEY_FILE = Path("/var/lib/appcoreos/api-auth.key")
 BOOTSTRAP_TOKEN_FILE = Path("/var/lib/appcoreos/bootstrap/token")
 BOOTSTRAP_CLAIMED_FILE = Path("/var/lib/appcoreos/bootstrap/claimed")
 
@@ -93,6 +94,13 @@ def get_bootstrap_token() -> str:
         return "not needed"
     try:
         return BOOTSTRAP_TOKEN_FILE.read_text(encoding="utf-8").strip() or "unavailable"
+    except Exception:
+        return "unavailable"
+
+
+def get_api_key() -> str:
+    try:
+        return API_AUTH_KEY_FILE.read_text(encoding="utf-8").strip() or "unavailable"
     except Exception:
         return "unavailable"
 
@@ -223,6 +231,8 @@ def draw_dashboard(stdscr: curses.window) -> None:
         bootstrap_status = get_bootstrap_status()
         bootstrap_token = get_bootstrap_token()
         bootstrap_token_display = bootstrap_token if len(bootstrap_token) <= 48 else f"{bootstrap_token[:48]}..."
+        api_key = get_api_key()
+        api_key_display = api_key if len(api_key) <= 48 else f"{api_key[:48]}..."
         last_update = get_last_update()
         state_timestamp = get_state_timestamp()
         now = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -253,12 +263,14 @@ def draw_dashboard(stdscr: curses.window) -> None:
         if bootstrap_status == "unclaimed":
             safe_addstr(stdscr, y + 11, x, f"Bootstrap token   : {bootstrap_token_display}")
             safe_addstr(stdscr, y + 12, x, "Claim command     : appcorectl bootstrap claim --token <token>")
+            safe_addstr(stdscr, y + 13, x, "API key           : shown after claim")
         else:
             safe_addstr(stdscr, y + 11, x, "Bootstrap token   : hidden (node claimed)")
             safe_addstr(stdscr, y + 12, x, "Claim command     : not needed")
-        safe_addstr(stdscr, y + 13, x, "Network mode      : DHCP (QEMU user networking)")
+            safe_addstr(stdscr, y + 13, x, f"API key           : {api_key_display}")
+        safe_addstr(stdscr, y + 14, x, "Network mode      : DHCP (QEMU user networking)")
 
-        table_top = y + 15
+        table_top = y + 16
         safe_addstr(stdscr, table_top, x, "Containers", curses.A_BOLD)
         safe_addstr(stdscr, table_top + 1, x, "NAME                IMAGE                                  STATUS")
         safe_addstr(stdscr, table_top + 2, x, "-" * min(panel_width - 4, 80))

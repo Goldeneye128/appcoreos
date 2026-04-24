@@ -1,27 +1,41 @@
 # appcorectl
 
-`appcorectl` is the official operator CLI for AppCoreOS lifecycle management.
+`appcorectl` is the official Rust operator CLI for AppCoreOS lifecycle management.
 
 - Day-0 bootstrap claim flow
-- Day-1 secure API access (API key + mTLS)
+- Day-1 secure API access (`mTLS + API key`)
 - Day-2 host, service, container, network, and log operations
 
 ## Install
 
 Prerequisites:
-- Go 1.24+
+- Rust toolchain with `cargo`
 
 Build from source:
 
 ```bash
-go build -o bin/appcorectl ./cmd/appcorectl
+cargo build --release --locked
+install -m 0755 target/release/appcorectl bin/appcorectl
 ```
 
-Build via helper script (auto-falls back to containerized Go 1.26 if local Go is too old):
+Build via helper script:
 
 ```bash
 ./scripts/build.sh
 ```
+
+Build release packages:
+
+```bash
+./scripts/package.sh
+```
+
+Release artifacts are written to `dist/`:
+
+- `appcorectl-<version>-linux-x86_64.tar.gz`
+- `appcorectl_<version>_amd64.deb`
+- `appcorectl-<version>-1.x86_64.rpm`
+- `SHA256SUMS`
 
 Build and install:
 
@@ -29,12 +43,6 @@ Build and install:
 ./scripts/build_install.sh
 # or system-wide
 ./scripts/build_install.sh --system
-```
-
-Install to your Go bin path:
-
-```bash
-go install ./cmd/appcorectl
 ```
 
 ## First Target Setup
@@ -168,6 +176,7 @@ appcorectl info --output json
 
 - TLS certificate verification is enabled by default.
 - `--insecure` is available for local development only and emits a warning.
+- `target add` and bootstrap commands trust-pin the server certificate when possible.
 - mTLS is supported through `--ca`, `--cert`, `--key` and target profile values.
 - `bootstrap claim` auto-generates local client CA/cert/key if `--client-ca-file` is omitted.
 - `bootstrap claim` waits for readiness by default; use `--wait=false` to skip.
@@ -197,7 +206,10 @@ appcorectl info --output json
 ## Development
 
 ```bash
-make test
-make lint
-make vuln
+cargo test --locked
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+# optional if cargo-audit is installed
+cargo audit
+./scripts/package.sh
 ```

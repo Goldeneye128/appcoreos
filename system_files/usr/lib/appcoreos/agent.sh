@@ -7,7 +7,6 @@ CONFIG_NEW_FILE="/var/lib/appcoreos/config.new.yaml"
 CONFIG_DOWNLOAD_FILE="/var/lib/appcoreos/config.new.yaml.download"
 LAST_REBOOT_TRIGGER_FILE="/var/lib/appcoreos/last-reboot-trigger"
 MACHINE_ID_FILE="/var/lib/appcoreos/machine-id"
-REMOTE_CONFIG_BASE_URL_DEFAULT="http://10.0.2.2:8081/config"
 DEBUG_SERVER_SCRIPT="/usr/lib/appcoreos/agent-debug-server.py"
 API_AUTH_KEY_FILE="/var/lib/appcoreos/api-auth.key"
 API_TLS_CERT_FILE="/var/lib/appcoreos/api-cert.pem"
@@ -40,33 +39,36 @@ require_bin python3
 require_bin ip
 require_bin openssl
 
-get_gateway_ip() {
-  ip -4 route show default 2>/dev/null | awk '
-    /^default/ {
-      for (i = 1; i <= NF; i++) {
-        if ($i == "via") {
-          print $(i + 1)
-          exit
-        }
-      }
-    }
-  '
-}
-
 if [[ ! -s "${MACHINE_ID_FILE}" ]]; then
   log "machine-id missing at ${MACHINE_ID_FILE}"
   exit 1
 fi
 
 machine_id="$(tr -d '\n' < "${MACHINE_ID_FILE}")"
-gateway_ip="$(get_gateway_ip || true)"
-remote_config_base_url="${REMOTE_CONFIG_BASE_URL_DEFAULT}"
-if [[ "${gateway_ip}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-  remote_config_base_url="http://${gateway_ip}:8081/config"
-fi
-remote_config_url="${remote_config_base_url}/${machine_id}"
 log "machine-id=${machine_id}"
-log "config-endpoint=${remote_config_url}"
+
+remote_config_enabled="0"
+remote_config_url=""
+remote_config_base_url="${APPCOREOS_REMOTE_CONFIG_BASE_URL:-}"
+remote_config_ca="${APPCOREOS_REMOTE_CONFIG_CA:-}"
+if [[ -n "${remote_config_base_url}" ]]; then
+  if [[ "${remote_config_base_url}" =~ ^https:// ]]; then
+    remote_config_enabled="1"
+    remote_config_url="${remote_config_base_url%/}/${machine_id}"
+    if [[ -n "${remote_config_ca}" && ! -r "${remote_config_ca}" ]]; then
+      log "remote config disabled: APPCOREOS_REMOTE_CONFIG_CA is not readable (${remote_config_ca})"
+      remote_config_enabled="0"
+      remote_config_url=""
+    fi
+  else
+    log "remote config disabled: APPCOREOS_REMOTE_CONFIG_BASE_URL must use https"
+  fi
+else
+  log "remote config sync disabled; set APPCOREOS_REMOTE_CONFIG_BASE_URL=https://... to enable"
+fi
+if [[ "${remote_config_enabled}" == "1" ]]; then
+  log "config-endpoint=${remote_config_url}"
+fi
 
 if [[ ! -f "${DEBUG_SERVER_SCRIPT}" ]]; then
   log "debug server missing at ${DEBUG_SERVER_SCRIPT}"
@@ -155,11 +157,26 @@ while true; do
     log "hostname=${hostname_value} containers=${container_count}"
   fi
 
+  if [[ "${remote_config_enabled}" != "1" ]]; then
+    sleep "${SLEEP_SECONDS}"
+    continue
+  fi
+
   log "fetching remote config from ${remote_config_url}"
   rm -f "${CONFIG_NEW_FILE}" "${CONFIG_DOWNLOAD_FILE}"
+  curl_args=(
+    -sS
+    --fail
+    --location
+    --max-time 10
+    --output "${CONFIG_DOWNLOAD_FILE}"
+    --write-out "%{http_code}"
+  )
+  if [[ -n "${remote_config_ca}" ]]; then
+    curl_args+=(--cacert "${remote_config_ca}")
+  fi
   http_code="$(
-    curl -sS --max-time 10 --output "${CONFIG_DOWNLOAD_FILE}" --write-out "%{http_code}" \
-      "${remote_config_url}" 2>/dev/null || true
+    curl "${curl_args[@]}" "${remote_config_url}" 2>/dev/null || true
   )"
 
   if [[ "${http_code}" == "200" ]]; then

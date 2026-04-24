@@ -1,17 +1,23 @@
 BINARY := appcorectl
 
-.PHONY: build test lint vuln ci
+.PHONY: build test lint vuln package ci
 
 build:
-	go build -o bin/$(BINARY) ./cmd/appcorectl
+	cargo build --release --locked
+	mkdir -p bin
+	install -m 0755 target/release/$(BINARY) bin/$(BINARY)
 
 test:
-	go test ./...
+	cargo test --locked
 
 lint:
-	golangci-lint run
+	cargo fmt --check
+	cargo clippy --locked --all-targets -- -D warnings
 
 vuln:
-	govulncheck ./...
+	cargo audit
+
+package:
+	./scripts/package.sh
 
 ci: test lint vuln

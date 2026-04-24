@@ -18,7 +18,7 @@ Goal: a Talos-style appliance experience without Kubernetes.
 - Local VM runner via `runvm.sh`
 - Machine config bootstrap + network apply
 - Container generation/reconciliation from machine config
-- Local agent + HTTPS management API (`/v1/*`) with API key auth
+- Local agent + HTTPS management API (`/v1/*`) with bootstrap, API key, and mTLS flows
 - Local TUI dashboard on console
 
 ## Repository Layout
@@ -29,7 +29,7 @@ Goal: a Talos-style appliance experience without Kubernetes.
 - `runvm.sh`: run qcow2 locally with QEMU
 - `dev.sh`: clean/build/run helper
 - `docs/`: API + OS setup documentation
-- `appcorectl/`: Go CLI client for AppCoreOS API operations
+- `appcorectl/`: Rust CLI client for AppCoreOS API operations
 
 ## Quick Start
 
@@ -38,6 +38,8 @@ Goal: a Talos-style appliance experience without Kubernetes.
 ```bash
 ./build.sh --target proxmox -d
 ```
+
+On macOS, `build.sh` switches the Podman machine to rootful mode before running `bootc-image-builder`. If you need the builder's helper-VM path, set `APPCOREOS_BIB_IN_VM=1` explicitly.
 
 Output image:
 
@@ -53,13 +55,17 @@ The VM forwards guest API `:9090` to host `https://127.0.0.1:9090`.
 
 ### 3. Call API
 
-Read API key from TUI, then:
+Read the API key from the TUI. After claim, use both the API key and the client certificate:
 
 ```bash
 curl -k https://127.0.0.1:9090/health
-curl -k -H "Authorization: Bearer <API_KEY>" https://127.0.0.1:9090/v1/info
-curl -k -H "Authorization: Bearer <API_KEY>" https://127.0.0.1:9090/v1/state
+curl --cacert ca.crt --cert client.crt --key client.key \
+  -H "Authorization: Bearer <API_KEY>" https://127.0.0.1:9090/v1/info
+curl --cacert ca.crt --cert client.crt --key client.key \
+  -H "Authorization: Bearer <API_KEY>" https://127.0.0.1:9090/v1/state
 ```
+
+The appliance image now includes `appcorectl` at `/usr/local/bin/appcorectl`, and CI builds the image definition to verify the CLI is present in the published OS image.
 
 ## Updates
 
@@ -87,12 +93,14 @@ updates:
 
 - No SSH intended for operations
 - API over HTTPS
+- Bootstrap token shown only in the local TUI
 - API key required for management endpoints
+- After claim, management endpoints require `mTLS + API key`
 - TUI is the primary local interface
 
 ## Day-0 Bootstrap (Claim)
 
-On first boot the node is **unclaimed** and shows a bootstrap token in the TUI.
+On first boot the node is **unclaimed** and shows a bootstrap token in the TUI. The bootstrap status endpoint reports claim metadata but does not return the token itself.
 
 Claim flow:
 
@@ -115,7 +123,7 @@ curl -k -X POST \
 }
 ```
 
-After claim, agent restarts and API enforces mTLS.
+After claim, agent restarts and API enforces `mTLS + API key`.
 
 ## Documentation
 

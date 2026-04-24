@@ -3,7 +3,7 @@ set -euo pipefail
 
 IMAGE_REF="${IMAGE_REF:-ghcr.io/goldeneye128/appcoreos:latest}"
 IMAGE_ARCH="amd64"
-TARGET_ARCH="x86_64"
+BIB_TARGET_ARCH="${APPCOREOS_BIB_TARGET_ARCH:-${IMAGE_ARCH}}"
 BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest"
 
 BUILD_DIR="build"
@@ -64,6 +64,19 @@ prepare_dirs() {
   mkdir -p "${OUTPUT_DIR}" "${TMP_DIR}" "${LOG_DIR}"
 }
 
+ensure_podman_machine_rootful() {
+  local rootful=""
+
+  rootful="$(podman machine inspect --format '{{.Rootful}}' 2>/dev/null || true)"
+  if [[ "${rootful}" == "true" ]]; then
+    return
+  fi
+
+  log "configuring podman machine for rootful mode (required by bootc-image-builder on macOS)"
+  podman machine stop >/dev/null 2>&1 || true
+  podman machine set --rootful
+}
+
 build_image_host() {
   log "using Fedora CoreOS base image"
   log "building image: ${IMAGE_REF} (${IMAGE_ARCH})"
@@ -74,6 +87,7 @@ build_image_macos_machine() {
   local repo_path
   repo_path="$(pwd)"
 
+  ensure_podman_machine_rootful
   log "ensuring podman machine is running"
   podman machine start >/dev/null 2>&1 || true
 
@@ -88,21 +102,70 @@ run_bib_local() {
   prepare_dirs
   log "building qcow2 with bootc-image-builder"
   podman run --rm --privileged --pull=newer \
+    --pid=host \
+    --ipc=host \
     --security-opt label=type:unconfined_t \
+    -v /dev:/dev \
     -v "${repo_path}/${OUTPUT_DIR}:/output" \
     -v "${repo_path}/${TMP_DIR}:/var/tmp" \
     -v /var/lib/containers/storage:/var/lib/containers/storage \
     "${BIB_IMAGE}" \
-    --type qcow2 --target-arch "${TARGET_ARCH}" --rootfs=xfs "${IMAGE_REF}"
+    --type qcow2 --target-arch "${BIB_TARGET_ARCH}" --use-librepo=True --rootfs=xfs "${IMAGE_REF}"
 }
 
 run_bib_macos_machine() {
   local repo_path
+  local remote_cmd_str=""
+  local -a remote_cmd
   repo_path="$(pwd)"
 
   prepare_dirs
+  ensure_podman_machine_rootful
+  log "ensuring podman machine is running"
+  podman machine start >/dev/null 2>&1 || true
   log "building qcow2 with bootc-image-builder in podman machine"
-  podman machine ssh "cd '${repo_path}' && rm -rf '${OUTPUT_DIR}' '${TMP_DIR}' && mkdir -p '${OUTPUT_DIR}' '${TMP_DIR}' && sudo podman run --rm --privileged --pull=newer --security-opt label=type:unconfined_t -v '${repo_path}/${OUTPUT_DIR}:/output' -v '${repo_path}/${TMP_DIR}:/var/tmp' -v /var/lib/containers/storage:/var/lib/containers/storage '${BIB_IMAGE}' --type qcow2 --target-arch '${TARGET_ARCH}' --rootfs=xfs '${IMAGE_REF}'"
+  remote_cmd=(
+    sudo podman run --rm --privileged --pull=newer
+    --pid=host
+    --ipc=host
+    --security-opt label=type:unconfined_t
+    -v /dev:/dev
+    -v "${repo_path}/${OUTPUT_DIR}:/output"
+    -v "${repo_path}/${TMP_DIR}:/var/tmp"
+    -v /var/lib/containers/storage:/var/lib/containers/storage
+    "${BIB_IMAGE}"
+    --type qcow2
+    --target-arch "${BIB_TARGET_ARCH}"
+    --use-librepo=True
+    --rootfs=xfs
+    "${IMAGE_REF}"
+  )
+  if [[ "${APPCOREOS_BIB_IN_VM:-0}" == "1" ]]; then
+    log "enabling bootc-image-builder --in-vm mode"
+    remote_cmd=(
+      sudo podman run --rm --privileged --pull=newer
+      --pid=host
+      --ipc=host
+      --security-opt label=type:unconfined_t
+      -v /dev:/dev
+      -v "${repo_path}/${OUTPUT_DIR}:/output"
+      -v "${repo_path}/${TMP_DIR}:/var/tmp"
+      -v /var/lib/containers/storage:/var/lib/containers/storage
+      "${BIB_IMAGE}"
+      --in-vm
+      --type qcow2
+      --target-arch "${BIB_TARGET_ARCH}"
+      --use-librepo=True
+      --rootfs=xfs
+      "${IMAGE_REF}"
+    )
+  fi
+  printf -v remote_cmd_str "%q " "${remote_cmd[@]}"
+  if ! podman machine ssh "cd '${repo_path}' && rm -rf '${OUTPUT_DIR}' '${TMP_DIR}' && mkdir -p '${OUTPUT_DIR}' '${TMP_DIR}' && ${remote_cmd_str}"; then
+    log "bootc-image-builder failed in the Podman machine"
+    log "if the failure mentions bootupd/bwrap namespace creation, try APPCOREOS_BIB_IN_VM=1 or build on a Linux/x86_64 host"
+    return 1
+  fi
 }
 
 collect_qcow2_artifact() {

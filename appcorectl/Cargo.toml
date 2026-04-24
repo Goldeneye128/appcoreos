@@ -1,0 +1,51 @@
+[package]
+name = "appcorectl"
+version = "0.2.0"
+edition = "2021"
+authors = ["Goldeneye128 <christian.devik@icloud.com>"]
+description = "Official operator CLI for AppCoreOS lifecycle management"
+license = "GPL-3.0-only"
+readme = "README.md"
+repository = "https://github.com/Goldeneye128/appcoreos"
+homepage = "https://github.com/Goldeneye128/appcoreos/tree/main/appcorectl"
+keywords = ["appcoreos", "cli", "operations", "bootc"]
+categories = ["command-line-utilities"]
+
+[package.metadata.deb]
+maintainer = "Goldeneye128 <christian.devik@icloud.com>"
+copyright = "2026, Goldeneye128"
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+  ["target/release/appcorectl", "usr/bin/appcorectl", "755"],
+  ["README.md", "usr/share/doc/appcorectl/README.md", "644"],
+  ["../LICENSE", "usr/share/doc/appcorectl/LICENSE", "644"],
+]
+extended-description = """\
+appcorectl is the official operator CLI for AppCoreOS.
+It handles bootstrap claim, secure API access, and routine host and workload operations.
+"""
+
+[package.metadata.generate-rpm]
+summary = "Official operator CLI for AppCoreOS"
+url = "https://github.com/Goldeneye128/appcoreos"
+assets = [
+  { source = "target/release/appcorectl", dest = "/usr/bin/appcorectl", mode = "755" },
+  { source = "README.md", dest = "/usr/share/doc/appcorectl/README.md", mode = "644", doc = true },
+  { source = "../LICENSE", dest = "/usr/share/doc/appcorectl/LICENSE", mode = "644", doc = true },
+]
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
+dirs = "6.0"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+url = "2.5"
+
+[dev-dependencies]
+tempfile = "3.20"

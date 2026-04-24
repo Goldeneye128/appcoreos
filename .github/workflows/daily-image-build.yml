@@ -50,3 +50,10 @@ jobs:
           tags: |
             ghcr.io/${{ steps.vars.outputs.owner_lc }}/appcoreos:latest
             ghcr.io/${{ steps.vars.outputs.owner_lc }}/appcoreos:${{ steps.vars.outputs.date_tag }}
+
+      - name: Verify published image contains appcorectl
+        run: |
+          docker pull ghcr.io/${{ steps.vars.outputs.owner_lc }}/appcoreos:${{ steps.vars.outputs.date_tag }}
+          docker run --rm --entrypoint /usr/local/bin/appcorectl \
+            ghcr.io/${{ steps.vars.outputs.owner_lc }}/appcoreos:${{ steps.vars.outputs.date_tag }} \
+            --help >/dev/null

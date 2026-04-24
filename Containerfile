@@ -1,5 +1,13 @@
 # Minimal immutable appliance image inspired by Universal Blue workflows,
 # based directly on Fedora CoreOS.
+FROM rust:1.87-bookworm AS appcorectl-builder
+
+WORKDIR /src/appcorectl
+COPY appcorectl/Cargo.toml appcorectl/Cargo.lock ./
+COPY appcorectl/src ./src
+RUN cargo build --release --locked \
+    && ./target/release/appcorectl --help >/dev/null
+
 FROM quay.io/fedora/fedora-coreos:stable
 
 ARG APPCOREOS_VERSION="43"
@@ -49,6 +57,7 @@ RUN dnf -y install \
 
 # Copy our appliance filesystem overlay into the image.
 COPY system_files/ /
+COPY --from=appcorectl-builder /src/appcorectl/target/release/appcorectl /usr/local/bin/appcorectl
 
 # Make systemd container-aware when running as an OCI container for testing.
 ENV container=oci
@@ -94,6 +103,7 @@ RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/boo
     && (grep -q '^IMAGE_ID=' /usr/lib/os-release && sed -i 's/^IMAGE_ID=.*/IMAGE_ID=\"appcoreos\"/' /usr/lib/os-release || echo 'IMAGE_ID=\"appcoreos\"' >> /usr/lib/os-release) \
     && (grep -q '^IMAGE_VERSION=' /usr/lib/os-release && sed -i 's/^IMAGE_VERSION=.*/IMAGE_VERSION=\"43\"/' /usr/lib/os-release || echo 'IMAGE_VERSION=\"43\"' >> /usr/lib/os-release) \
     && ln -sf ../usr/lib/os-release /etc/os-release \
+    && /usr/local/bin/appcorectl --help >/dev/null \
     && (systemctl preset-all || true) \
     && (systemctl enable bootc-fetch-apply-updates.timer || true) \
     && systemctl enable appcore.target machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service init-bootstrap.service agent.service tui.service appcoreos-reboot-window.timer

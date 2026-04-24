@@ -17,6 +17,11 @@ Build bootable qcow2 artifact:
 ./build.sh --target proxmox
 ```
 
+macOS notes:
+
+- `build.sh` requires a Podman machine and will switch the default machine to rootful mode before starting it.
+- If you need the builder helper-VM path, set `APPCOREOS_BIB_IN_VM=1` before running `build.sh`.
+
 Optional clean rebuild:
 
 ```bash
@@ -55,7 +60,7 @@ QEMU mode:
 2. Operator calls `POST /v1/bootstrap/claim` with:
    - `X-Bootstrap-Token` header
    - client CA PEM in JSON body
-3. Agent restarts and API begins enforcing mTLS.
+3. Agent restarts and API begins enforcing `mTLS + API key`.
 
 ## 5. Runtime Model
 
@@ -71,7 +76,7 @@ Startup flow:
 
 - Source config: `/var/lib/appcoreos/config.yaml`
 - Quadlet generation target: `/etc/containers/systemd/*.container`
-- Regeneration is idempotent each cycle.
+- AppCoreOS removes only previously managed Quadlet files and leaves unrelated container units intact.
 
 ### State reporting
 
@@ -80,9 +85,10 @@ Startup flow:
 
 ### Agent
 
-- Polls remote config endpoint (`http://<gateway>:8081/config/<machine-id>`)
-- Applies validated changes
 - Exposes HTTPS API on `9090`
+- Remote config sync is disabled by default.
+- Optional remote config sync requires `APPCOREOS_REMOTE_CONFIG_BASE_URL=https://...`.
+- Optional custom trust for remote config uses `APPCOREOS_REMOTE_CONFIG_CA`.
 
 ## 6. Key Paths
 
@@ -95,7 +101,9 @@ Startup flow:
 
 - Immutable, image-based OS model
 - API-driven management
-- HTTPS local API + API key auth
+- HTTPS local API
+- Bootstrap token shown only in local TUI
+- `mTLS + API key` auth after claim
 - Console-first appliance behavior
 
 ## 8. Typical Operator Workflow

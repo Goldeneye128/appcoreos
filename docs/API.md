@@ -12,7 +12,8 @@ AppCoreOS exposes a local management API from the agent on port `9090`.
 ## Security
 
 - Transport: HTTPS (self-signed certificate generated on first boot).
-- Auth: API key (Bearer token).
+- Pre-claim auth: bootstrap token only for `POST /v1/bootstrap/claim`.
+- Post-claim auth: `mTLS + API key` for management endpoints.
 - API key location on node: `/var/lib/appcoreos/api-auth.key`.
 - For now, the API key is shown in the TUI.
 
@@ -28,8 +29,9 @@ Authorization: Bearer <API_KEY>
 # health (no auth)
 curl -k https://127.0.0.1:9090/health
 
-# state
-curl -k -H "Authorization: Bearer <API_KEY>" \
+# claimed node
+curl --cacert ca.crt --cert client.crt --key client.key \
+  -H "Authorization: Bearer <API_KEY>" \
   https://127.0.0.1:9090/v1/state
 ```
 
@@ -40,6 +42,8 @@ Before node claim:
 - `GET /v1/bootstrap/status`
 - `POST /v1/bootstrap/claim` (requires `X-Bootstrap-Token` header)
 
+`GET /v1/bootstrap/status` returns claim metadata and whether a bootstrap token exists locally. It does not return the token itself.
+
 Claim request body:
 
 ```json
@@ -48,7 +52,7 @@ Claim request body:
 }
 ```
 
-After successful claim, agent restarts and API switches to mTLS mode.
+After successful claim, agent restarts and API switches to `mTLS + API key` mode.
 
 ## Endpoint Reference
 
@@ -149,7 +153,7 @@ Note: staging requires the host to track a reachable image reference. The defaul
 
 ## mTLS Request Example
 
-After claim, include client cert/key and trusted CA:
+After claim, include client cert/key, trusted CA, and API key:
 
 ```bash
 curl \
@@ -178,6 +182,7 @@ This API follows Talos-style principles adapted for AppCoreOS:
 ## Current Limits
 
 - TLS is self-signed (client should use trust pinning in production).
+- Bootstrap trust pinning and local client PKI generation are implemented in `appcorectl`.
 - mTLS bootstrap is implemented; fine-grained RBAC is planned.
 - `PATCH /v1/machine-config` currently appends YAML patch text (minimal behavior).
 - `POST /v1/host/rollback` placeholder only.
