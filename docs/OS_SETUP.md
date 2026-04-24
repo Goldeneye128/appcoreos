@@ -32,6 +32,11 @@ Artifact output:
 
 - `build/appcoreos.qcow2`
 
+Terraform module:
+
+- Proxmox deployment module source: `Goldeneye128/appcoreos/proxmox`
+- Registry-style repo: `https://github.com/Goldeneye128/terraform-proxmox-appcoreos`
+
 Build logs:
 
 - `build/logs/build-<timestamp>.log`

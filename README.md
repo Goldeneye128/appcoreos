@@ -129,6 +129,8 @@ After claim, agent restarts and API enforces `mTLS + API key`.
 
 - API reference: [`docs/API.md`](docs/API.md)
 - OS setup/build/run: [`docs/OS_SETUP.md`](docs/OS_SETUP.md)
+- Terraform Proxmox module: `Goldeneye128/appcoreos/proxmox`
+  - Registry-style repo: `https://github.com/Goldeneye128/terraform-proxmox-appcoreos`
 
 ## License
 
