@@ -1,0 +1,93 @@
+# Minimal immutable appliance image for local macOS builds that inject a
+# prebuilt Linux/amd64 appcorectl binary instead of compiling Rust in-container.
+FROM quay.io/fedora/fedora-coreos:stable
+
+ARG APPCOREOS_VERSION="43"
+
+LABEL com.coreos.osname="appcoreos" \
+      org.opencontainers.image.title="appcoreos" \
+      org.opencontainers.image.description="Immutable API-driven appliance OS based on Fedora CoreOS" \
+      org.opencontainers.image.version="${APPCOREOS_VERSION}" \
+      org.opencontainers.image.vendor="AppCoreOS Project" \
+      org.opencontainers.image.source="https://github.com/Goldeneye128/appcoreos"
+
+RUN dnf -y install \
+      bootc \
+      podman \
+      curl \
+      python3 \
+      openssl \
+      NetworkManager \
+      systemd \
+      tmux \
+      podman-compose \
+      firewalld \
+      qemu-guest-agent \
+      open-vm-tools \
+      hyperv-daemons \
+    && (dnf -y remove \
+      openssh-server \
+      openssh-clients \
+      'cockpit*' \
+      'docker*' \
+      moby-engine \
+      tailscale \
+      wireguard-tools || true) \
+    && curl -fL --retry 3 --retry-delay 2 \
+      "https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64" \
+      -o /usr/bin/yq \
+    && chmod 0755 /usr/bin/yq \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+COPY system_files/ /
+COPY appcorectl/bin/appcorectl-linux-amd64 /usr/local/bin/appcorectl
+
+ENV container=oci
+
+RUN chmod 0755 /usr/lib/appcoreos/apply-machine-config.sh /usr/lib/appcoreos/bootstrap-machine-config.sh \
+    && chmod 0755 /usr/lib/appcoreos/generate-containers.sh \
+    && chmod 0755 /usr/lib/appcoreos/generate-state.sh \
+    && chmod 0755 /usr/lib/appcoreos/init-machine-id.sh \
+    && chmod 0755 /usr/lib/appcoreos/init-bootstrap.sh \
+    && chmod 0755 /usr/lib/appcoreos/update-os.sh \
+    && chmod 0755 /usr/lib/appcoreos/reboot-if-update-window.sh \
+    && chmod 0755 /usr/lib/appcoreos/agent.sh \
+    && chmod 0755 /usr/lib/appcoreos/agent-debug-server.py \
+    && chmod 0755 /usr/lib/appcoreos/tui.sh \
+    && rm -f /usr/lib/systemd/system-generators/systemd-getty-generator || true \
+    && rm -f /usr/lib/systemd/system-generators/systemd-ssh-generator || true \
+    && rm -f /usr/lib/systemd/system/coreos-touch-run-agetty.service || true \
+    && rm -f /usr/lib/systemd/system/coreos-check-ssh-keys.service || true \
+    && rm -f /usr/lib/systemd/system/sshd* || true \
+    && rm -f /etc/systemd/system/sshd* || true \
+    && (systemctl mask sshd.service || true) \
+    && (systemctl mask sshd.socket || true) \
+    && (systemctl mask sshd-vsock.socket || true) \
+    && (systemctl mask ssh-access.target || true) \
+    && (systemctl disable zincati.service zincati.timer || true) \
+    && (systemctl mask zincati.service zincati.timer || true) \
+    && (systemctl mask getty.target || true) \
+    && (systemctl mask getty@.service || true) \
+    && (systemctl mask serial-getty@.service || true) \
+    && (systemctl mask console-getty.service || true) \
+    && (systemctl mask coreos-touch-run-agetty.service || true) \
+    && (systemctl mask coreos-check-ssh-keys.service || true) \
+    && (systemctl mask getty@tty1.service || true) \
+    && (systemctl mask serial-getty@ttyS0.service || true) \
+    && mkdir -p /var/lib/appcoreos \
+    && mkdir -p /etc/containers/systemd \
+    && sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME=\"App CoreOS 43\"/' /usr/lib/os-release \
+    && sed -i 's/^NAME=.*/NAME=\"AppCoreOS\"/' /usr/lib/os-release \
+    && (grep -q '^VARIANT=' /usr/lib/os-release && sed -i 's/^VARIANT=.*/VARIANT=\"AppCoreOS\"/' /usr/lib/os-release || echo 'VARIANT=\"AppCoreOS\"' >> /usr/lib/os-release) \
+    && (grep -q '^VARIANT_ID=' /usr/lib/os-release && sed -i 's/^VARIANT_ID=.*/VARIANT_ID=\"appcoreos\"/' /usr/lib/os-release || echo 'VARIANT_ID=\"appcoreos\"' >> /usr/lib/os-release) \
+    && (grep -q '^IMAGE_ID=' /usr/lib/os-release && sed -i 's/^IMAGE_ID=.*/IMAGE_ID=\"appcoreos\"/' /usr/lib/os-release || echo 'IMAGE_ID=\"appcoreos\"' >> /usr/lib/os-release) \
+    && (grep -q '^IMAGE_VERSION=' /usr/lib/os-release && sed -i 's/^IMAGE_VERSION=.*/IMAGE_VERSION=\"43\"/' /usr/lib/os-release || echo 'IMAGE_VERSION=\"43\"' >> /usr/lib/os-release) \
+    && ln -sf ../usr/lib/os-release /etc/os-release \
+    && /usr/local/bin/appcorectl --help >/dev/null \
+    && (systemctl preset-all || true) \
+    && (systemctl enable bootc-fetch-apply-updates.timer || true) \
+    && systemctl enable appcore.target machine-config.service containers.service podman-auto-update.timer state.timer machine-id.service init-bootstrap.service agent.service tui.service appcoreos-reboot-window.timer
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

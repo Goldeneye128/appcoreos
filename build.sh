@@ -5,6 +5,7 @@ IMAGE_REF="${IMAGE_REF:-ghcr.io/goldeneye128/appcoreos:latest}"
 IMAGE_ARCH="amd64"
 BIB_TARGET_ARCH="${APPCOREOS_BIB_TARGET_ARCH:-${IMAGE_ARCH}}"
 BIB_IMAGE="quay.io/centos-bootc/bootc-image-builder:latest"
+CONTAINERFILE_PATH="${CONTAINERFILE_PATH:-Containerfile}"
 
 BUILD_DIR="build"
 LOG_DIR="${BUILD_DIR}/logs"
@@ -77,10 +78,24 @@ ensure_podman_machine_rootful() {
   podman machine set --rootful
 }
 
+ensure_bib_in_vm_requirements() {
+  if [[ "${APPCOREOS_BIB_IN_VM:-0}" != "1" ]]; then
+    return
+  fi
+
+  if podman machine ssh "rpm -q qemu-user qemu-user-static qemu-system-aarch64 >/dev/null 2>&1"; then
+    return
+  fi
+
+  log "the Podman machine is missing qemu-user/qemu-system support required by bootc-image-builder --in-vm on Apple Silicon"
+  log "install the needed qemu packages in the Podman machine or build the qcow2 on a Linux/x86_64 host"
+  exit 1
+}
+
 build_image_host() {
   log "using Fedora CoreOS base image"
-  log "building image: ${IMAGE_REF} (${IMAGE_ARCH})"
-  podman build --arch "${IMAGE_ARCH}" --pull=newer -t "${IMAGE_REF}" .
+  log "building image: ${IMAGE_REF} (${IMAGE_ARCH}) with ${CONTAINERFILE_PATH}"
+  podman build --arch "${IMAGE_ARCH}" --pull=newer -f "${CONTAINERFILE_PATH}" -t "${IMAGE_REF}" .
 }
 
 build_image_macos_machine() {
@@ -91,8 +106,15 @@ build_image_macos_machine() {
   log "ensuring podman machine is running"
   podman machine start >/dev/null 2>&1 || true
 
-  log "building image in podman machine (rootful)"
-  podman machine ssh "cd '${repo_path}' && sudo podman build --arch '${IMAGE_ARCH}' --pull=newer -t '${IMAGE_REF}' ."
+  log "building image in podman machine (rootful) with ${CONTAINERFILE_PATH}"
+  podman machine ssh "cd '${repo_path}' && sudo podman build --arch '${IMAGE_ARCH}' --pull=newer -f '${CONTAINERFILE_PATH}' -t '${IMAGE_REF}' ."
+}
+
+build_appcorectl_linux_amd64() {
+  require_cmd bash
+  log "building Linux/amd64 appcorectl for local image injection"
+  bash ./appcorectl/scripts/build_linux_amd64.sh
+  CONTAINERFILE_PATH="Containerfile.prebuilt"
 }
 
 run_bib_local() {
@@ -121,6 +143,7 @@ run_bib_macos_machine() {
 
   prepare_dirs
   ensure_podman_machine_rootful
+  ensure_bib_in_vm_requirements
   log "ensuring podman machine is running"
   podman machine start >/dev/null 2>&1 || true
   log "building qcow2 with bootc-image-builder in podman machine"
@@ -204,6 +227,9 @@ build_proxmox() {
   require_cmd podman
 
   if [[ "${OS}" == "Darwin" ]]; then
+    ensure_podman_machine_rootful
+    ensure_bib_in_vm_requirements
+    build_appcorectl_linux_amd64
     build_image_macos_machine
     run_bib_macos_machine
   else
